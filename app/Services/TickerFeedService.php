@@ -1,0 +1,449 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\RssFeed;
+use App\Models\TickerMessage;
+use App\Models\TickerSetting;
+use App\Models\User;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+
+class TickerFeedService
+{
+    /**
+     * @return array{
+     *     settings: array{
+     *         headline: string,
+     *         rss_headline: string,
+     *         user_headline: string,
+     *         background_color: string,
+     *         text_color: string,
+     *         accent_color: string,
+     *         canvas_width: int,
+         *         canvas_height: int,
+         *         animation_style: string,
+         *         animation_duration_seconds: int,
+         *         animation_out_duration_seconds: int,
+         *         shape_style: string,
+     *         label_position: string,
+     *         chroma_key_color: string,
+     *         image_url: string|null,
+     *         crawl_duration_seconds: int,
+     *         message_display_seconds: int,
+     *         poll_interval_seconds: int,
+     *         show_rss: bool
+     *     },
+     *     items: list<array{type: string, label: string|null, text: string, url: string|null}>
+     * }
+     */
+    public function payload(User $owner): array
+    {
+        $settings = TickerSetting::current($owner);
+        $rssLockKey = $this->rssPlaybackLockKey($owner);
+
+        $currentMessage = $this->currentPlayingMessage($settings, $owner);
+        if ($currentMessage) {
+            Cache::forget($rssLockKey);
+
+            return [
+                'settings' => Arr::only($settings->toArray(), [
+                    'headline',
+                    'rss_headline',
+                    'user_headline',
+                    'background_color',
+                    'text_color',
+                    'accent_color',
+                    'canvas_width',
+                    'canvas_height',
+                    'animation_style',
+                    'animation_duration_seconds',
+                    'animation_out_duration_seconds',
+                    'shape_style',
+                    'label_position',
+                    'chroma_key_color',
+                    'image_url',
+                    'crawl_duration_seconds',
+                    'message_display_seconds',
+                    'poll_interval_seconds',
+                    'show_rss',
+                ]),
+                'items' => [
+                    [
+                        'type' => 'message',
+                        'label' => $currentMessage->source_label ?? $currentMessage->submitter_name,
+                        'text' => $currentMessage->content,
+                        'url' => null,
+                    ],
+                ],
+            ];
+        }
+
+        $nextMessage = $this->nextQueuedMessage($owner);
+        $rssLockUntil = Cache::get($rssLockKey);
+        $rssItems = $settings->show_rss ? $this->rssItems($owner, $settings) : [];
+
+        if ($nextMessage && $this->hasActiveRssLock($rssLockUntil) && $rssItems !== []) {
+            return [
+                'settings' => Arr::only($settings->toArray(), [
+                    'headline',
+                    'rss_headline',
+                    'user_headline',
+                    'background_color',
+                    'text_color',
+                    'accent_color',
+                    'canvas_width',
+                    'canvas_height',
+                    'animation_style',
+                    'animation_duration_seconds',
+                    'animation_out_duration_seconds',
+                    'shape_style',
+                    'label_position',
+                    'chroma_key_color',
+                    'image_url',
+                    'crawl_duration_seconds',
+                    'message_display_seconds',
+                    'poll_interval_seconds',
+                    'show_rss',
+                ]),
+                'items' => array_values($rssItems),
+            ];
+        }
+
+        if ($nextMessage) {
+            $nextMessage->update([
+                'status' => 'playing',
+                'playback_started_at' => now(),
+            ]);
+            Cache::forget($rssLockKey);
+
+            return [
+                'settings' => Arr::only($settings->toArray(), [
+                    'headline',
+                    'rss_headline',
+                    'user_headline',
+                    'background_color',
+                    'text_color',
+                    'accent_color',
+                    'canvas_width',
+                    'canvas_height',
+                    'animation_style',
+                    'animation_duration_seconds',
+                    'animation_out_duration_seconds',
+                    'shape_style',
+                    'label_position',
+                    'chroma_key_color',
+                    'image_url',
+                    'crawl_duration_seconds',
+                    'message_display_seconds',
+                    'poll_interval_seconds',
+                    'show_rss',
+                ]),
+                'items' => [
+                    [
+                        'type' => 'message',
+                        'label' => $nextMessage->source_label ?? $nextMessage->submitter_name,
+                        'text' => $nextMessage->content,
+                        'url' => null,
+                    ],
+                ],
+            ];
+        }
+
+        if ($settings->show_rss && $rssItems !== []) {
+            if (! $this->hasActiveRssLock($rssLockUntil)) {
+                $rssCycleDuration = max(1, count($rssItems)) * $settings->crawl_duration_seconds;
+
+                Cache::put($rssLockKey, now()->addSeconds($rssCycleDuration), now()->addMinutes(10));
+            }
+
+            return [
+                'settings' => Arr::only($settings->toArray(), [
+                    'headline',
+                    'rss_headline',
+                    'user_headline',
+                    'background_color',
+                    'text_color',
+                    'accent_color',
+                    'canvas_width',
+                    'canvas_height',
+                    'animation_style',
+                    'animation_duration_seconds',
+                    'animation_out_duration_seconds',
+                    'shape_style',
+                    'label_position',
+                    'chroma_key_color',
+                    'image_url',
+                    'crawl_duration_seconds',
+                    'message_display_seconds',
+                    'poll_interval_seconds',
+                    'show_rss',
+                ]),
+                'items' => array_values($rssItems),
+            ];
+        }
+
+        return [
+            'settings' => Arr::only($settings->toArray(), [
+                'headline',
+                'rss_headline',
+                'user_headline',
+                'background_color',
+                'text_color',
+                'accent_color',
+                'canvas_width',
+                'canvas_height',
+                'animation_style',
+                'animation_duration_seconds',
+                'animation_out_duration_seconds',
+                'shape_style',
+                'label_position',
+                'chroma_key_color',
+                'image_url',
+                'crawl_duration_seconds',
+                'message_display_seconds',
+                'poll_interval_seconds',
+                'show_rss',
+            ]),
+            'items' => [],
+        ];
+    }
+
+    public function emptyPayload(): array
+    {
+        $settings = new TickerSetting;
+
+        return [
+            'settings' => Arr::only($settings->toArray(), [
+                'headline',
+                'rss_headline',
+                'user_headline',
+                'background_color',
+                'text_color',
+                'accent_color',
+                'canvas_width',
+                'canvas_height',
+                'animation_style',
+                'animation_duration_seconds',
+                'animation_out_duration_seconds',
+                'shape_style',
+                'label_position',
+                'chroma_key_color',
+                'image_url',
+                'crawl_duration_seconds',
+                'message_display_seconds',
+                'poll_interval_seconds',
+                'show_rss',
+            ]),
+            'items' => [],
+        ];
+    }
+
+    private function currentPlayingMessage(TickerSetting $settings, User $owner): ?TickerMessage
+    {
+        $playing = TickerMessage::query()
+            ->forOwner($owner)
+            ->visible()
+            ->where('status', 'playing')
+            ->oldest('playback_started_at')
+            ->first();
+
+        if ($playing && $playing->playback_started_at?->addSeconds($settings->message_display_seconds)->isFuture()) {
+            return $playing;
+        }
+
+        if ($playing) {
+            $playing->update([
+                'status' => 'played',
+                'played_at' => now(),
+            ]);
+        }
+
+        return null;
+    }
+
+    private function nextQueuedMessage(User $owner): ?TickerMessage
+    {
+        return TickerMessage::query()
+            ->forOwner($owner)
+            ->visible()
+            ->where('status', 'queued')
+            ->orderBy('sort_order')
+            ->oldest()
+            ->first();
+    }
+
+    private function hasActiveRssLock(mixed $rssLockUntil): bool
+    {
+        return $rssLockUntil instanceof \DateTimeInterface && now()->isBefore($rssLockUntil);
+    }
+
+    private function rssPlaybackLockKey(User $owner): string
+    {
+        return "ticker:rss-lock:{$owner->id}";
+    }
+
+    private function rssRotationStateKey(User $owner): string
+    {
+        return "ticker:rss-rotation:{$owner->id}";
+    }
+
+    /**
+     * @return list<array{type: string, label: string, text: string, url: string|null}>
+     */
+    private function rssItems(User $owner, TickerSetting $settings): array
+    {
+        $itemsByFeed = RssFeed::query()
+            ->forOwner($owner)
+            ->active()
+            ->oldest('name')
+            ->get()
+            ->map(fn (RssFeed $feed): array => Cache::remember(
+                key: "ticker:rss-feed:{$owner->id}:{$feed->id}",
+                ttl: now()->addMinutes($feed->refresh_minutes),
+                callback: fn (): array => $this->fetchRssItems($feed),
+            ))
+            ->all();
+
+        $items = $this->interleaveRssItems($itemsByFeed);
+
+        return $this->rotateRssItems($owner, $settings, $items);
+    }
+
+    /**
+     * @param  list<array{type: string, label: string, text: string, url: string|null}>  $items
+     * @return list<array{type: string, label: string, text: string, url: string|null}>
+     */
+    private function rotateRssItems(User $owner, TickerSetting $settings, array $items): array
+    {
+        if ($items === []) {
+            return [];
+        }
+
+        $stateKey = $this->rssRotationStateKey($owner);
+        $state = Cache::get($stateKey);
+        $durationSeconds = max(1, $settings->crawl_duration_seconds);
+        $now = now();
+        $rotationIndex = 0;
+        $updatedAt = $now;
+
+        if (is_array($state) && array_key_exists('index', $state) && array_key_exists('updated_at', $state)) {
+            $rotationIndex = max(0, (int) $state['index']) % count($items);
+            $updatedAt = Carbon::parse($state['updated_at']);
+
+            $elapsedSeconds = $updatedAt->diffInSeconds($now);
+
+            if ($elapsedSeconds >= $durationSeconds) {
+                $advanceBy = intdiv($elapsedSeconds, $durationSeconds);
+                $rotationIndex = ($rotationIndex + $advanceBy) % count($items);
+                $updatedAt = $updatedAt->addSeconds($advanceBy * $durationSeconds);
+            }
+        }
+
+        Cache::put($stateKey, [
+            'index' => $rotationIndex,
+            'updated_at' => $updatedAt->toIso8601String(),
+        ], now()->addMinutes(10));
+
+        return array_values([...array_slice($items, $rotationIndex), ...array_slice($items, 0, $rotationIndex)]);
+    }
+
+    /**
+     * @param  list<list<array{type: string, label: string, text: string, url: string|null}>>  $itemsByFeed
+     * @return list<array{type: string, label: string, text: string, url: string|null}>
+     */
+    private function interleaveRssItems(array $itemsByFeed): array
+    {
+        $merged = [];
+        $maxItems = 0;
+
+        foreach ($itemsByFeed as $items) {
+            $maxItems = max($maxItems, count($items));
+        }
+
+        for ($index = 0; $index < $maxItems; $index++) {
+            foreach ($itemsByFeed as $items) {
+                if (isset($items[$index])) {
+                    $merged[] = $items[$index];
+                }
+            }
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @return list<array{type: string, label: string, text: string, url: string|null}>
+     */
+    private function fetchRssItems(RssFeed $feed): array
+    {
+        $response = Http::timeout(5)
+            ->connectTimeout(3)
+            ->retry(2, 200)
+            ->get($feed->url);
+
+        if (! $response->successful()) {
+            return [];
+        }
+
+        $feed->forceFill(['last_checked_at' => now()])->save();
+
+        return $this->parseRss($response->body(), $feed);
+    }
+
+    /**
+     * @return list<array{type: string, label: string, text: string, url: string|null}>
+     */
+    private function parseRss(string $xml, RssFeed $feed): array
+    {
+        $previous = libxml_use_internal_errors(true);
+        $document = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOCDATA);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if ($document === false) {
+            return [];
+        }
+
+        $entries = $document->channel->item ?? $document->entry ?? [];
+        $items = [];
+
+        foreach ($entries as $entry) {
+            $title = trim((string) ($entry->title ?? ''));
+
+            if ($title === '') {
+                continue;
+            }
+
+            $items[] = [
+                'type' => 'rss',
+                'label' => $feed->name,
+                'text' => Str::limit(html_entity_decode(strip_tags($title)), 180),
+                'url' => $this->entryUrl($entry),
+            ];
+
+            if (count($items) >= $feed->item_limit) {
+                break;
+            }
+        }
+
+        return $items;
+    }
+
+    private function entryUrl(mixed $entry): ?string
+    {
+        $link = trim((string) ($entry->link ?? ''));
+
+        if ($link !== '') {
+            return $link;
+        }
+
+        $attributes = $entry->link?->attributes();
+        $href = trim((string) ($attributes?->href ?? ''));
+
+        return $href !== '' ? $href : null;
+    }
+}
