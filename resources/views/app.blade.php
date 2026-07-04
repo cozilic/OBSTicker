@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+@php($appearance = request()->cookie('appearance') ?? 'system')
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ($appearance ?? 'system') == 'dark'])>
     <head>
         <meta charset="utf-8">
