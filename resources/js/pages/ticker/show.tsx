@@ -78,7 +78,25 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const tickerTrackRef = useRef<HTMLDivElement | null>(null);
     const [tickerDurationSeconds, setTickerDurationSeconds] = useState(payload.settings.crawl_duration_seconds);
     const isVisible = payload.items.length > 0;
-    const currentItem = displayedItem ?? payload.items[0] ?? null;
+    const currentItem = useMemo(() => {
+        if (payload.items.length === 0) {
+            return null;
+        }
+
+        if (!displayedItem) {
+            return payload.items[0] ?? null;
+        }
+
+        return (
+            payload.items.find(
+                (item) =>
+                    item.type === displayedItem.type &&
+                    item.label === displayedItem.label &&
+                    item.text === displayedItem.text &&
+                    item.url === displayedItem.url,
+            ) ?? payload.items[0] ?? null
+        );
+    }, [displayedItem, payload.items]);
     const headline = currentItem?.type === 'rss' ? payload.settings.rss_headline : payload.settings.user_headline;
     const hasImage = Boolean(payload.settings.image_url);
     const labelIsRight = payload.settings.label_position === 'right';
@@ -215,7 +233,28 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
             }).catch(() => null);
 
             if (isMounted && response?.ok) {
-                setPayload(await response.json());
+                const nextPayload: TickerPayload = await response.json();
+
+                setPayload(nextPayload);
+                setDisplayedItem((current) => {
+                    if (nextPayload.items.length === 0) {
+                        return null;
+                    }
+
+                    if (!current) {
+                        return nextPayload.items[0] ?? null;
+                    }
+
+                    const stillExists = nextPayload.items.some(
+                        (item) =>
+                            item.type === current.type &&
+                            item.label === current.label &&
+                            item.text === current.text &&
+                            item.url === current.url,
+                    );
+
+                    return stillExists ? current : nextPayload.items[0] ?? null;
+                });
             }
         };
 
@@ -227,17 +266,6 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
             window.clearInterval(timer);
         };
     }, [payload.settings.poll_interval_seconds, payloadUrl]);
-
-    useEffect(() => {
-        if (payload.items.length === 0) {
-            setDisplayedItem(null);
-            return;
-        }
-
-        if (!displayedItem) {
-            setDisplayedItem(payload.items[0] ?? null);
-        }
-    }, [displayedItem, payload.items]);
 
     const advanceItem = () => {
         if (payload.items.length === 0) {
