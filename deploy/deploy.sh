@@ -47,8 +47,24 @@ if sudo -n true >/dev/null 2>&1; then
     sudo chown -R "$(id -un):$(id -gn)" "$APP_DIR"
 fi
 
-git fetch origin main
-git reset --hard origin/main
+if ! git fetch origin main; then
+    if sudo -n true >/dev/null 2>&1; then
+        sudo chown -R "$(id -un):$(id -gn)" "$APP_DIR"
+    fi
+
+    git fetch origin main
+fi
+
+if ! git reset --hard origin/main; then
+    if sudo -n true >/dev/null 2>&1; then
+        sudo chown -R "$(id -un):$(id -gn)" "$APP_DIR"
+        git reset --hard origin/main
+    else
+        echo "Unable to reset repository permissions. Run a one-time chown on the server." >&2
+        exit 1
+    fi
+fi
+
 git clean -fd
 
 fix_permissions() {
