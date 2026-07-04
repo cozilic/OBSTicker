@@ -19,7 +19,6 @@ export default function Welcome() {
                                 className="h-full w-full object-cover"
                             />
                         </span>
-                        OBS Ticker
                     </Link>
                     <Button variant="outline" size="sm" asChild className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white">
                         <Link href={auth.user ? dashboard() : login()}>
