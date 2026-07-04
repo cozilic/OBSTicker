@@ -2,7 +2,9 @@
 
 OBSTicker is a Laravel + Inertia React app for running a live ticker overlay in OBS. It supports public text submissions, an admin dashboard, RSS feeds, moderators, and a fullscreen public ticker view.
 
-![OBSTicker logo](./public/images/ticker-logo.png)
+<p align="center">
+    <img src="./public/images/ticker-logo.png" alt="OBSTicker logo" width="520" />
+</p>
 
 ## Requirements
 
