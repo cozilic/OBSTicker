@@ -50,14 +50,10 @@ git clean -fd
 fix_permissions() {
     mkdir -p storage/logs storage/framework/cache storage/framework/sessions bootstrap/cache
 
-    if sudo -n true >/dev/null 2>&1; then
-        sudo chown -R www-data:www-data storage bootstrap/cache database/database.sqlite
-    else
-        chmod -R ug+rwX storage bootstrap/cache
+    chmod -R a+rwX storage bootstrap/cache
 
-        if [ -f database/database.sqlite ]; then
-            chmod 664 database/database.sqlite
-        fi
+    if [ -f database/database.sqlite ]; then
+        chmod 666 database/database.sqlite
     fi
 }
 
