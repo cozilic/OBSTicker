@@ -44,5 +44,18 @@ jobs:
           port: 22
           script_stop: true
           script: |
-            cd "${{ secrets.ORACLE_PATH }}"
-            APP_DIR="${{ secrets.ORACLE_PATH }}" bash deploy/deploy.sh
+            REPO_URL="https://github.com/cozilic/OBSTicker.git"
+            APP_DIR="${{ secrets.ORACLE_PATH }}"
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              mkdir -p "$(dirname "$APP_DIR")"
+              rm -rf "$APP_DIR"
+              git clone --branch main "$REPO_URL" "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+
+            APP_DIR="$APP_DIR" bash deploy/deploy.sh
