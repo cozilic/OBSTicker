@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 type TickerPayload = {
     settings: {
@@ -150,7 +151,10 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
 
     useLayoutEffect(() => {
         if (!currentItem) {
-            setTickerDurationSeconds(tickerMinDurationSeconds);
+            window.requestAnimationFrame(() => {
+                setTickerDurationSeconds(tickerMinDurationSeconds);
+            });
+
             return;
         }
 
@@ -270,6 +274,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const advanceItem = () => {
         if (payload.items.length === 0) {
             setDisplayedItem(null);
+
             return;
         }
 

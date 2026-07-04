@@ -6,7 +6,6 @@ use App\Models\RssFeed;
 use App\Models\TickerMessage;
 use App\Models\TickerSetting;
 use App\Models\User;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -24,11 +23,11 @@ class TickerFeedService
      *         text_color: string,
      *         accent_color: string,
      *         canvas_width: int,
-         *         canvas_height: int,
-         *         animation_style: string,
-         *         animation_duration_seconds: int,
-         *         animation_out_duration_seconds: int,
-         *         shape_style: string,
+     *         canvas_height: int,
+     *         animation_style: string,
+     *         animation_duration_seconds: int,
+     *         animation_out_duration_seconds: int,
+     *         shape_style: string,
      *         label_position: string,
      *         chroma_key_color: string,
      *         image_url: string|null,
@@ -50,35 +49,11 @@ class TickerFeedService
             Cache::forget($rssLockKey);
 
             return [
-                'settings' => Arr::only($settings->toArray(), [
-                    'headline',
-                    'rss_headline',
-                    'user_headline',
-                    'background_color',
-                    'text_color',
-                    'accent_color',
-                    'canvas_width',
-                    'canvas_height',
-                    'animation_style',
-                    'animation_duration_seconds',
-                    'animation_out_duration_seconds',
-                    'shape_style',
-                    'label_position',
-                    'chroma_key_color',
-                    'image_url',
-                    'crawl_duration_seconds',
-                    'message_display_seconds',
-                    'poll_interval_seconds',
-                    'show_rss',
-                ]),
-                'items' => [
-                    [
-                        'type' => 'message',
-                        'label' => $currentMessage->source_label ?? $currentMessage->submitter_name,
-                        'text' => $currentMessage->content,
-                        'url' => null,
-                    ],
-                ],
+                'settings' => $this->settingsPayload($settings),
+                'items' => [$this->messageItem(
+                    $currentMessage->source_label ?? $currentMessage->submitter_name,
+                    $currentMessage->content,
+                )],
             ];
         }
 
@@ -88,28 +63,8 @@ class TickerFeedService
 
         if ($nextMessage && $this->hasActiveRssLock($rssLockUntil) && $rssItems !== []) {
             return [
-                'settings' => Arr::only($settings->toArray(), [
-                    'headline',
-                    'rss_headline',
-                    'user_headline',
-                    'background_color',
-                    'text_color',
-                    'accent_color',
-                    'canvas_width',
-                    'canvas_height',
-                    'animation_style',
-                    'animation_duration_seconds',
-                    'animation_out_duration_seconds',
-                    'shape_style',
-                    'label_position',
-                    'chroma_key_color',
-                    'image_url',
-                    'crawl_duration_seconds',
-                    'message_display_seconds',
-                    'poll_interval_seconds',
-                    'show_rss',
-                ]),
-                'items' => array_values($rssItems),
+                'settings' => $this->settingsPayload($settings),
+                'items' => $rssItems,
             ];
         }
 
@@ -121,35 +76,11 @@ class TickerFeedService
             Cache::forget($rssLockKey);
 
             return [
-                'settings' => Arr::only($settings->toArray(), [
-                    'headline',
-                    'rss_headline',
-                    'user_headline',
-                    'background_color',
-                    'text_color',
-                    'accent_color',
-                    'canvas_width',
-                    'canvas_height',
-                    'animation_style',
-                    'animation_duration_seconds',
-                    'animation_out_duration_seconds',
-                    'shape_style',
-                    'label_position',
-                    'chroma_key_color',
-                    'image_url',
-                    'crawl_duration_seconds',
-                    'message_display_seconds',
-                    'poll_interval_seconds',
-                    'show_rss',
-                ]),
-                'items' => [
-                    [
-                        'type' => 'message',
-                        'label' => $nextMessage->source_label ?? $nextMessage->submitter_name,
-                        'text' => $nextMessage->content,
-                        'url' => null,
-                    ],
-                ],
+                'settings' => $this->settingsPayload($settings),
+                'items' => [$this->messageItem(
+                    $nextMessage->source_label ?? $nextMessage->submitter_name,
+                    $nextMessage->content,
+                )],
             ];
         }
 
@@ -161,83 +92,110 @@ class TickerFeedService
             }
 
             return [
-                'settings' => Arr::only($settings->toArray(), [
-                    'headline',
-                    'rss_headline',
-                    'user_headline',
-                    'background_color',
-                    'text_color',
-                    'accent_color',
-                    'canvas_width',
-                    'canvas_height',
-                    'animation_style',
-                    'animation_duration_seconds',
-                    'animation_out_duration_seconds',
-                    'shape_style',
-                    'label_position',
-                    'chroma_key_color',
-                    'image_url',
-                    'crawl_duration_seconds',
-                    'message_display_seconds',
-                    'poll_interval_seconds',
-                    'show_rss',
-                ]),
-                'items' => array_values($rssItems),
+                'settings' => $this->settingsPayload($settings),
+                'items' => $rssItems,
             ];
         }
 
         return [
-            'settings' => Arr::only($settings->toArray(), [
-                'headline',
-                'rss_headline',
-                'user_headline',
-                'background_color',
-                'text_color',
-                'accent_color',
-                'canvas_width',
-                'canvas_height',
-                'animation_style',
-                'animation_duration_seconds',
-                'animation_out_duration_seconds',
-                'shape_style',
-                'label_position',
-                'chroma_key_color',
-                'image_url',
-                'crawl_duration_seconds',
-                'message_display_seconds',
-                'poll_interval_seconds',
-                'show_rss',
-            ]),
+            'settings' => $this->settingsPayload($settings),
             'items' => [],
         ];
     }
 
+    /**
+     * @return array{
+     *     headline: string,
+     *     rss_headline: string,
+     *     user_headline: string,
+     *     background_color: string,
+     *     text_color: string,
+     *     accent_color: string,
+     *     canvas_width: int,
+     *     canvas_height: int,
+     *     animation_style: string,
+     *     animation_duration_seconds: int,
+     *     animation_out_duration_seconds: int,
+     *     shape_style: string,
+     *     label_position: string,
+     *     chroma_key_color: string,
+     *     image_url: string|null,
+     *     crawl_duration_seconds: int,
+     *     message_display_seconds: int,
+     *     poll_interval_seconds: int,
+     *     show_rss: bool
+     * }
+     */
+    private function settingsPayload(TickerSetting $settings): array
+    {
+        return [
+            'headline' => $settings->headline,
+            'rss_headline' => $settings->rss_headline,
+            'user_headline' => $settings->user_headline,
+            'background_color' => $settings->background_color,
+            'text_color' => $settings->text_color,
+            'accent_color' => $settings->accent_color,
+            'canvas_width' => $settings->canvas_width,
+            'canvas_height' => $settings->canvas_height,
+            'animation_style' => $settings->animation_style,
+            'animation_duration_seconds' => $settings->animation_duration_seconds,
+            'animation_out_duration_seconds' => $settings->animation_out_duration_seconds,
+            'shape_style' => $settings->shape_style,
+            'label_position' => $settings->label_position,
+            'chroma_key_color' => $settings->chroma_key_color,
+            'image_url' => $settings->image_url,
+            'crawl_duration_seconds' => $settings->crawl_duration_seconds,
+            'message_display_seconds' => $settings->message_display_seconds,
+            'poll_interval_seconds' => $settings->poll_interval_seconds,
+            'show_rss' => $settings->show_rss,
+        ];
+    }
+
+    /**
+     * @return array{type: string, label: string|null, text: string, url: string|null}
+     */
+    private function messageItem(?string $label, string $text): array
+    {
+        return [
+            'type' => 'message',
+            'label' => $label,
+            'text' => $text,
+            'url' => null,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     settings: array{
+     *         headline: string,
+     *         rss_headline: string,
+     *         user_headline: string,
+     *         background_color: string,
+     *         text_color: string,
+     *         accent_color: string,
+     *         canvas_width: int,
+     *         canvas_height: int,
+     *         animation_style: string,
+     *         animation_duration_seconds: int,
+     *         animation_out_duration_seconds: int,
+     *         shape_style: string,
+     *         label_position: string,
+     *         chroma_key_color: string,
+     *         image_url: string|null,
+     *         crawl_duration_seconds: int,
+     *         message_display_seconds: int,
+     *         poll_interval_seconds: int,
+     *         show_rss: bool
+     *     },
+     *     items: array<int, array{type: string, label: string|null, text: string, url: string|null}>
+     * }
+     */
     public function emptyPayload(): array
     {
         $settings = new TickerSetting;
 
         return [
-            'settings' => Arr::only($settings->toArray(), [
-                'headline',
-                'rss_headline',
-                'user_headline',
-                'background_color',
-                'text_color',
-                'accent_color',
-                'canvas_width',
-                'canvas_height',
-                'animation_style',
-                'animation_duration_seconds',
-                'animation_out_duration_seconds',
-                'shape_style',
-                'label_position',
-                'chroma_key_color',
-                'image_url',
-                'crawl_duration_seconds',
-                'message_display_seconds',
-                'poll_interval_seconds',
-                'show_rss',
-            ]),
+            'settings' => $this->settingsPayload($settings),
             'items' => [],
         ];
     }
@@ -251,7 +209,10 @@ class TickerFeedService
             ->oldest('playback_started_at')
             ->first();
 
-        if ($playing && $playing->playback_started_at?->addSeconds($settings->message_display_seconds)->isFuture()) {
+        if (
+            $playing
+            && $playing->playback_started_at?->addSeconds($settings->message_display_seconds)->isFuture()
+        ) {
             return $playing;
         }
 
@@ -308,7 +269,7 @@ class TickerFeedService
             ))
             ->all();
 
-        $items = $this->interleaveRssItems($itemsByFeed);
+        $items = $this->interleaveRssItems(array_values($itemsByFeed));
 
         return $this->rotateRssItems($owner, $settings, $items);
     }
@@ -334,7 +295,7 @@ class TickerFeedService
             $rotationIndex = max(0, (int) $state['index']) % count($items);
             $updatedAt = Carbon::parse($state['updated_at']);
 
-            $elapsedSeconds = $updatedAt->diffInSeconds($now);
+            $elapsedSeconds = (int) $updatedAt->diffInSeconds($now);
 
             if ($elapsedSeconds >= $durationSeconds) {
                 $advanceBy = intdiv($elapsedSeconds, $durationSeconds);
@@ -348,7 +309,7 @@ class TickerFeedService
             'updated_at' => $updatedAt->toIso8601String(),
         ], now()->addMinutes(10));
 
-        return array_values([...array_slice($items, $rotationIndex), ...array_slice($items, 0, $rotationIndex)]);
+        return [...array_slice($items, $rotationIndex), ...array_slice($items, 0, $rotationIndex)];
     }
 
     /**
@@ -441,8 +402,8 @@ class TickerFeedService
             return $link;
         }
 
-        $attributes = $entry->link?->attributes();
-        $href = trim((string) ($attributes?->href ?? ''));
+        $attributes = $entry->link->attributes();
+        $href = trim((string) ($attributes->href ?? ''));
 
         return $href !== '' ? $href : null;
     }
