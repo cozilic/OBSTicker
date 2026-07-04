@@ -47,15 +47,21 @@ git fetch origin main
 git reset --hard origin/main
 git clean -fd
 
-if sudo -n true >/dev/null 2>&1; then
-    sudo chown -R www-data:www-data storage bootstrap/cache database/database.sqlite
-else
-    chmod -R ug+rwX storage bootstrap/cache
+fix_permissions() {
+    mkdir -p storage/logs storage/framework/cache storage/framework/sessions bootstrap/cache
 
-    if [ -f database/database.sqlite ]; then
-        chmod 664 database/database.sqlite
+    if sudo -n true >/dev/null 2>&1; then
+        sudo chown -R www-data:www-data storage bootstrap/cache database/database.sqlite
+    else
+        chmod -R ug+rwX storage bootstrap/cache
+
+        if [ -f database/database.sqlite ]; then
+            chmod 664 database/database.sqlite
+        fi
     fi
-fi
+}
+
+fix_permissions
 
 composer install --no-interaction --no-dev --prefer-dist --optimize-autoloader --no-progress
 npm ci
@@ -64,6 +70,7 @@ npm run build
 php artisan optimize:clear
 php artisan migrate --force
 php artisan storage:link || true
+fix_permissions
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
