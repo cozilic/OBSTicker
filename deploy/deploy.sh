@@ -47,6 +47,16 @@ git fetch origin main
 git reset --hard origin/main
 git clean -fd
 
+if sudo -n true >/dev/null 2>&1; then
+    sudo chown -R www-data:www-data storage bootstrap/cache database/database.sqlite
+else
+    chmod -R ug+rwX storage bootstrap/cache
+
+    if [ -f database/database.sqlite ]; then
+        chmod 664 database/database.sqlite
+    fi
+fi
+
 composer install --no-interaction --no-dev --prefer-dist --optimize-autoloader --no-progress
 npm ci
 npm run build
