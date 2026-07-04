@@ -1,5 +1,5 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { LogIn, RadioTower } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { dashboard, login } from '@/routes';
 
@@ -12,8 +12,12 @@ export default function Welcome() {
             <main className="min-h-screen bg-neutral-950 text-white">
                 <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
                     <Link href="/" className="flex items-center gap-3 font-semibold">
-                        <span className="flex size-9 items-center justify-center rounded-md bg-cyan-300 text-neutral-950">
-                            <RadioTower className="size-5" />
+                        <span className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-cyan-300">
+                            <img
+                                src="/images/ticker-logo.png"
+                                alt="OBS Ticker"
+                                className="h-full w-full object-cover"
+                            />
                         </span>
                         OBS Ticker
                     </Link>

@@ -1,16 +1,10 @@
-import { RadioTower } from 'lucide-react';
-
 export default function AppLogo() {
     return (
-        <>
-            <div className="flex aspect-square size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-                <RadioTower className="size-5" />
-            </div>
-            <div className="ml-1 grid flex-1 text-left text-sm">
-                <span className="mb-0.5 truncate leading-tight font-semibold">
-                    OBS Ticker
-                </span>
-            </div>
-        </>
+        <img
+            src="/images/ticker-logo.png"
+            alt="OBS Ticker"
+            className="h-8 w-auto max-w-full object-contain"
+            loading="eager"
+        />
     );
 }
