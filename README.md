@@ -12,7 +12,7 @@ OBSTicker is a Laravel + Inertia React app for running a live ticker overlay in 
 
 ## Requirements
 
-- PHP 8.3+
+- PHP 8.4.1+
 - Composer
 - Node.js 20+
 - SQLite, MySQL, or PostgreSQL

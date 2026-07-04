@@ -10,6 +10,11 @@ if ! command -v php >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! php -r 'exit(version_compare(PHP_VERSION, "8.4.1", ">=") ? 0 : 1);'; then
+    echo "PHP 8.4.1 or newer is required" >&2
+    exit 1
+fi
+
 if ! command -v composer >/dev/null 2>&1; then
     echo "composer is required" >&2
     exit 1
