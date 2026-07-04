@@ -11,14 +11,12 @@ export default function Welcome() {
             <Head title="OBS Lower-third Ticker" />
             <main className="min-h-screen bg-neutral-950 text-white">
                 <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
-                    <Link href="/" className="flex items-center gap-3 font-semibold">
-                        <span className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-cyan-300">
-                            <img
-                                src="/images/ticker-logo.png"
-                                alt="OBS Ticker"
-                                className="h-full w-full object-cover"
-                            />
-                        </span>
+                    <Link href="/" className="flex items-center">
+                        <img
+                            src="/images/ticker-logo.png"
+                            alt="OBS Ticker"
+                            className="h-9 w-auto"
+                        />
                     </Link>
                     <Button variant="outline" size="sm" asChild className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white">
                         <Link href={auth.user ? dashboard() : login()}>
