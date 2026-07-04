@@ -43,6 +43,10 @@ trap cleanup EXIT
 
 php artisan down --retry=60 >/dev/null 2>&1 || true
 
+if sudo -n true >/dev/null 2>&1; then
+    sudo chown -R "$(id -un):$(id -gn)" "$APP_DIR"
+fi
+
 git fetch origin main
 git reset --hard origin/main
 git clean -fd
