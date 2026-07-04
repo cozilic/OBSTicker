@@ -27,21 +27,5 @@ jobs:
           port: 22
           script_stop: true
           script: |
-            set -e
-
             cd "${{ secrets.ORACLE_PATH }}"
-            git fetch origin main
-            git reset --hard origin/main
-            git clean -fd
-
-            composer install --no-interaction --no-dev --prefer-dist --optimize-autoloader
-            npm ci
-            npm run build
-
-            php artisan optimize:clear
-            php artisan migrate --force
-            php artisan storage:link || true
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
-            php artisan queue:restart || true
+            APP_DIR="${{ secrets.ORACLE_PATH }}" bash deploy/deploy.sh
