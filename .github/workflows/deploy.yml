@@ -18,7 +18,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check deploy configuration
+        id: check
+        env:
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
+          ORACLE_USER: ${{ secrets.ORACLE_USER }}
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          ORACLE_PATH: ${{ secrets.ORACLE_PATH }}
+        run: |
+          if [ -z "$ORACLE_HOST" ] || [ -z "$ORACLE_USER" ] || [ -z "$ORACLE_SSH_KEY" ] || [ -z "$ORACLE_PATH" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Oracle deploy secrets are not configured yet. Skipping deploy."
+            exit 0
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
       - name: Deploy over SSH
+        if: steps.check.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.ORACLE_HOST }}
