@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('ticker_settings', function (Blueprint $table) {
-            $table->string('rss_headline')->default('Senaste nytt')->after('headline');
-            $table->string('user_headline')->default('Senaste text')->after('rss_headline');
+            $table->string('rss_headline')->default('Latest news')->after('headline');
+            $table->string('user_headline')->default('Latest text')->after('rss_headline');
             $table->string('animation_style')->default('slide-left')->after('accent_color');
             $table->string('shape_style')->default('bar')->after('animation_style');
             $table->string('image_url')->nullable()->after('shape_style');

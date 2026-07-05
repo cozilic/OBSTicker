@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { fitTextToWidth } from '@/lib/text';
 import { dashboard as tickerDashboard } from '@/routes/ticker';
 import { store as storeMessage, destroy as destroyMessage } from '@/routes/ticker/messages';
 import { store as storeModerator } from '@/routes/ticker/moderators';
@@ -78,6 +79,13 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
     const chromaTickerUrl = `${tickerUrl}${tickerUrl.includes('?') ? '&' : '?'}chroma=1`;
     const hasPreviewImage = Boolean(settings.image_url);
     const previewLabelIsRight = settings.label_position === 'right';
+    const previewHeadline = playingMessage ? settings.user_headline : settings.rss_headline;
+    const previewHeadlineFontSize = fitTextToWidth(previewHeadline.toUpperCase(), {
+        maxSize: 14,
+        minSize: 9,
+        maxWidth: 138,
+        fontWeight: '700',
+    });
     const previewColumns = previewLabelIsRight
         ? hasPreviewImage
             ? 'grid-cols-[1fr_170px_72px]'
@@ -97,15 +105,15 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                     <div>
                         <h1 className="text-2xl font-semibold tracking-normal">OBS Ticker</h1>
                         <p className="text-muted-foreground text-sm">
-                            Lower-third för OBS Browser Source. {queuedMessages} i kö
-                            {playingMessage ? `, spelar: ${playingMessage.content}` : ', RSS används när kön är tom'}.
+                            Lower-third for OBS Browser Source. {queuedMessages} queued
+                            {playingMessage ? `, playing: ${playingMessage.content}` : ', RSS is used when the queue is empty'}.
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <Button variant="outline" size="sm" asChild>
                             <a href={submitUrl} target="_blank" rel="noreferrer">
                                 <ExternalLink />
-                                Inskickssida
+                                Submission page
                             </a>
                         </Button>
                     </div>
@@ -115,41 +123,41 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                     <div className="flex flex-col gap-4">
                         <Card className="rounded-lg">
                             <CardHeader>
-                                <CardTitle>Manuella texter</CardTitle>
-                                <CardDescription>Skicka in korta meddelanden som visas före RSS-rubriker.</CardDescription>
+                                <CardTitle>Manual messages</CardTitle>
+                                <CardDescription>Submit short messages that appear before RSS headlines.</CardDescription>
                             </CardHeader>
                             <CardContent className="flex flex-col gap-4">
                                 <Form {...storeMessage.form()} resetOnSuccess className="grid gap-3 md:grid-cols-[1fr_150px_110px_auto]">
                                     {({ errors, processing }) => (
                                         <>
                                             <div className="md:col-span-4">
-                                                <Label htmlFor="content">Admintext till kön</Label>
+                                                <Label htmlFor="content">Admin message for queue</Label>
                                                 <textarea
                                                     id="content"
                                                     name="content"
                                                     rows={3}
                                                     className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 mt-1 flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
-                                                    placeholder="Skriv texten som ska rulla i lower-third..."
+                                                    placeholder="Write the message that should roll in the lower-third..."
                                                 />
                                                 {errors.content && <p className="text-destructive mt-1 text-sm">{errors.content}</p>}
                                             </div>
                                             <div>
-                                                <Label htmlFor="source_label">Etikett</Label>
+                                                <Label htmlFor="source_label">Label</Label>
                                                 <Input id="source_label" name="source_label" placeholder="Studio" />
                                             </div>
                                             <div>
-                                                <Label htmlFor="sort_order">Ordning</Label>
+                                                <Label htmlFor="sort_order">Order</Label>
                                                 <Input id="sort_order" name="sort_order" type="number" min="0" defaultValue="0" />
                                             </div>
                                             <label className="flex items-center gap-2 pt-6 text-sm">
                                                 <input type="hidden" name="is_active" value="0" />
                                                 <Checkbox name="is_active" value="1" defaultChecked />
-                                                Aktiv
+                                                Active
                                             </label>
                                             <div className="pt-6">
                                                 <Button type="submit" disabled={processing}>
                                                     <Plus />
-                                                    Lägg till
+                                                    Add
                                                 </Button>
                                             </div>
                                         </>
@@ -157,25 +165,25 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                 </Form>
 
                                 <div className="divide-y rounded-md border">
-                                    {messages.length === 0 && <p className="text-muted-foreground p-4 text-sm">Inga meddelanden ännu.</p>}
+                                    {messages.length === 0 && <p className="text-muted-foreground p-4 text-sm">No messages yet.</p>}
                                     {messages.map((message) => (
                                         <div key={message.id} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
                                             <div className="min-w-0">
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    <span className="text-muted-foreground text-xs">{message.source_type === 'user' ? 'Användare' : 'Admin'}</span>
+                                                    <span className="text-muted-foreground text-xs">{message.source_type === 'user' ? 'User' : 'Admin'}</span>
                                                     {(message.submitter_name || message.source_label) && (
                                                         <span className="text-muted-foreground text-xs">{message.submitter_name ?? message.source_label}</span>
                                                     )}
                                                     <span className="text-muted-foreground text-xs">#{message.sort_order}</span>
                                                     <span className="text-muted-foreground text-xs">
-                                                        {message.status === 'queued' ? 'I kö' : message.status === 'playing' ? 'Spelas nu' : 'Klar'}
+                                                        {message.status === 'queued' ? 'Queued' : message.status === 'playing' ? 'Playing now' : 'Done'}
                                                     </span>
-                                                    {!message.is_active && <span className="text-destructive text-xs">Inaktiv</span>}
+                                                    {!message.is_active && <span className="text-destructive text-xs">Inactive</span>}
                                                 </div>
                                                 <p className="mt-1 text-sm">{message.content}</p>
                                             </div>
                                             <Form {...destroyMessage.form(message.id)}>
-                                                <Button variant="ghost" size="icon" type="submit" aria-label="Ta bort meddelande">
+                                                <Button variant="ghost" size="icon" type="submit" aria-label="Delete message">
                                                     <Trash2 />
                                                 </Button>
                                             </Form>
@@ -187,15 +195,15 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
 
                         <Card className="rounded-lg">
                             <CardHeader>
-                                <CardTitle>RSS-källor</CardTitle>
-                                <CardDescription>Rubriker hämtas server-side med cache och blandas in efter manuella texter.</CardDescription>
+                                <CardTitle>RSS feeds</CardTitle>
+                                <CardDescription>Headlines are fetched server-side with cache and mixed in after manual messages.</CardDescription>
                             </CardHeader>
                             <CardContent className="flex flex-col gap-4">
                                 <Form {...storeRssFeed.form()} resetOnSuccess className="grid gap-3 md:grid-cols-[180px_1fr_120px_140px_auto]">
                                     {({ errors, processing }) => (
                                         <>
                                             <div>
-                                                <Label htmlFor="name">Namn</Label>
+                                                <Label htmlFor="name">Name</Label>
                                                 <Input id="name" name="name" placeholder="SVT" />
                                                 {errors.name && <p className="text-destructive mt-1 text-sm">{errors.name}</p>}
                                             </div>
@@ -205,17 +213,17 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                                 {errors.url && <p className="text-destructive mt-1 text-sm">{errors.url}</p>}
                                             </div>
                                             <div>
-                                                <Label htmlFor="item_limit">Antal</Label>
+                                                <Label htmlFor="item_limit">Items</Label>
                                                 <Input id="item_limit" name="item_limit" type="number" min="1" max="20" defaultValue="5" />
                                             </div>
                                             <div>
-                                                <Label htmlFor="refresh_minutes">Cache min</Label>
+                                                <Label htmlFor="refresh_minutes">Cache minutes</Label>
                                                 <Input id="refresh_minutes" name="refresh_minutes" type="number" min="5" max="180" defaultValue="15" />
                                             </div>
                                             <div className="pt-6">
                                                 <Button type="submit" disabled={processing}>
                                                     <Plus />
-                                                    Lägg till
+                                                    Add
                                                 </Button>
                                             </div>
                                         </>
@@ -223,19 +231,19 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                 </Form>
 
                                 <div className="divide-y rounded-md border">
-                                    {rssFeeds.length === 0 && <p className="text-muted-foreground p-4 text-sm">Inga RSS-källor ännu.</p>}
+                                    {rssFeeds.length === 0 && <p className="text-muted-foreground p-4 text-sm">No RSS feeds yet.</p>}
                                     {rssFeeds.map((feed) => (
                                         <div key={feed.id} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
                                             <div className="min-w-0">
                                                 <div className="flex flex-wrap items-center gap-2">
                                                     <span className="font-medium">{feed.name}</span>
-                                                    {!feed.is_active && <span className="text-destructive text-xs">Inaktiv</span>}
-                                                    <span className="text-muted-foreground text-xs">{feed.item_limit} rubriker</span>
+                                                    {!feed.is_active && <span className="text-destructive text-xs">Inactive</span>}
+                                                    <span className="text-muted-foreground text-xs">{feed.item_limit} headlines</span>
                                                 </div>
                                                 <p className="text-muted-foreground mt-1 truncate text-sm">{feed.url}</p>
                                             </div>
                                             <Form {...destroyRssFeed.form(feed.id)}>
-                                                <Button variant="ghost" size="icon" type="submit" aria-label="Ta bort RSS-källa">
+                                                <Button variant="ghost" size="icon" type="submit" aria-label="Delete RSS feed">
                                                     <Trash2 />
                                                 </Button>
                                             </Form>
@@ -248,36 +256,36 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                         {canManageModerators && (
                             <Card className="rounded-lg">
                                 <CardHeader>
-                                    <CardTitle>Moderatorer</CardTitle>
-                                    <CardDescription>Owner kan lägga till moderatorer som får hantera ticker, kö och RSS.</CardDescription>
+                                    <CardTitle>Moderators</CardTitle>
+                                    <CardDescription>The owner can add moderators who may manage the ticker, queue, and RSS feeds.</CardDescription>
                                 </CardHeader>
                                 <CardContent className="flex flex-col gap-4">
                                     <Form {...storeModerator.form()} resetOnSuccess className="grid gap-3 md:grid-cols-[1fr_1fr_150px_150px_auto]">
                                         {({ errors, processing }) => (
                                             <>
                                                 <div>
-                                                    <Label htmlFor="moderator_name">Namn</Label>
+                                                    <Label htmlFor="moderator_name">Name</Label>
                                                     <Input id="moderator_name" name="name" />
                                                     {errors.name && <p className="text-destructive mt-1 text-sm">{errors.name}</p>}
                                                 </div>
                                                 <div>
-                                                    <Label htmlFor="moderator_email">E-post</Label>
+                                                    <Label htmlFor="moderator_email">Email</Label>
                                                     <Input id="moderator_email" name="email" type="email" />
                                                     {errors.email && <p className="text-destructive mt-1 text-sm">{errors.email}</p>}
                                                 </div>
                                                 <div>
-                                                    <Label htmlFor="moderator_password">Lösenord</Label>
+                                                    <Label htmlFor="moderator_password">Password</Label>
                                                     <Input id="moderator_password" name="password" type="password" />
                                                     {errors.password && <p className="text-destructive mt-1 text-sm">{errors.password}</p>}
                                                 </div>
                                                 <div>
-                                                    <Label htmlFor="moderator_password_confirmation">Bekräfta</Label>
+                                                    <Label htmlFor="moderator_password_confirmation">Confirm</Label>
                                                     <Input id="moderator_password_confirmation" name="password_confirmation" type="password" />
                                                 </div>
                                                 <div className="pt-6">
                                                     <Button type="submit" disabled={processing}>
                                                         <Users />
-                                                        Lägg till
+                                                        Add
                                                     </Button>
                                                 </div>
                                             </>
@@ -302,22 +310,22 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
 
                     <Card className="h-fit rounded-lg">
                         <CardHeader>
-                            <CardTitle>Utseende</CardTitle>
-                            <CardDescription>Kopiera länkarna till OBS och publik inskickssida.</CardDescription>
+                            <CardTitle>Appearance</CardTitle>
+                            <CardDescription>Copy the links for OBS and the public submission page.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col gap-5">
                             <div className="flex flex-wrap gap-2">
                                 <Button variant="secondary" size="sm" type="button" onClick={() => void copyToClipboard(tickerUrl)}>
                                     <Copy />
-                                    Kopiera OBS-länk
+                                    Copy OBS link
                                 </Button>
                                 <Button variant="secondary" size="sm" type="button" onClick={() => void copyToClipboard(chromaTickerUrl)}>
                                     <Copy />
-                                    Kopiera chroma
+                                    Copy chroma link
                                 </Button>
                                 <Button variant="secondary" size="sm" type="button" onClick={() => void copyToClipboard(submitUrl)}>
                                     <Copy />
-                                    Kopiera inskick
+                                    Copy submission link
                                 </Button>
                             </div>
                             <div className="overflow-hidden rounded-lg border bg-neutral-950 p-4">
@@ -336,13 +344,13 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                         </div>
                                     )}
                                     <div
-                                        className={`row-start-1 flex items-center justify-center px-4 text-sm font-bold uppercase ${previewLabelColumn}`}
-                                        style={{ backgroundColor: settings.accent_color, color: settings.background_color }}
+                                        className={`row-start-1 flex min-w-0 items-center justify-center overflow-hidden px-4 text-sm font-bold uppercase ${previewLabelColumn}`}
+                                        style={{ backgroundColor: settings.accent_color, color: settings.background_color, fontSize: `${previewHeadlineFontSize}px` }}
                                     >
-                                        {playingMessage ? settings.user_headline : settings.rss_headline}
+                                        <span>{previewHeadline}</span>
                                     </div>
                                     <div className={`row-start-1 flex min-w-0 items-center px-4 text-sm font-semibold ${previewTextColumn}`}>
-                                        <span className="truncate">{playingMessage?.content ?? 'RSS-rubrik visas när kön är tom'}</span>
+                                        <span className="truncate">{playingMessage?.content ?? 'RSS headline shown when the queue is empty'}</span>
                                     </div>
                                 </div>
                             </div>
@@ -350,20 +358,20 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                 {({ processing }) => (
                                     <>
                                         <div>
-                                            <Label htmlFor="headline">Standardrubrik</Label>
+                                            <Label htmlFor="headline">Default headline</Label>
                                             <Input id="headline" name="headline" defaultValue={settings.headline} />
                                         </div>
                                         <div>
-                                            <Label htmlFor="rss_headline">RSS-rubrik</Label>
+                                            <Label htmlFor="rss_headline">RSS headline</Label>
                                             <Input id="rss_headline" name="rss_headline" defaultValue={settings.rss_headline} />
                                         </div>
                                         <div>
-                                            <Label htmlFor="user_headline">Användarrubrik</Label>
+                                            <Label htmlFor="user_headline">User headline</Label>
                                             <Input id="user_headline" name="user_headline" defaultValue={settings.user_headline} />
                                         </div>
                                         <div className="grid grid-cols-3 gap-3">
                                             <div>
-                                                <Label htmlFor="background_color">Bakgrund</Label>
+                                                <Label htmlFor="background_color">Background</Label>
                                                 <Input id="background_color" name="background_color" type="color" defaultValue={settings.background_color} className="h-10 p-1" />
                                             </div>
                                             <div>
@@ -377,11 +385,11 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
-                                                <Label htmlFor="canvas_width">OBS bredd</Label>
+                                                <Label htmlFor="canvas_width">OBS width</Label>
                                                 <Input id="canvas_width" name="canvas_width" type="number" min="320" max="7680" defaultValue={settings.canvas_width} />
                                             </div>
                                             <div>
-                                                <Label htmlFor="canvas_height">OBS höjd</Label>
+                                                <Label htmlFor="canvas_height">OBS height</Label>
                                                 <Input id="canvas_height" name="canvas_height" type="number" min="180" max="4320" defaultValue={settings.canvas_height} />
                                             </div>
                                         </div>
@@ -392,15 +400,15 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="slide-left">Svep in från vänster</SelectItem>
+                                                    <SelectItem value="slide-left">Slide in from left</SelectItem>
                                                     <SelectItem value="fade">Fade in</SelectItem>
                                                     <SelectItem value="bounce">Bounce</SelectItem>
-                                                    <SelectItem value="zoom">Zoom/form</SelectItem>
+                                                    <SelectItem value="zoom">Zoom / shape</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
                                         <div>
-                                            <Label htmlFor="animation_duration_seconds">Fade in sekunder</Label>
+                                            <Label htmlFor="animation_duration_seconds">Fade in seconds</Label>
                                             <Input
                                                 id="animation_duration_seconds"
                                                 name="animation_duration_seconds"
@@ -411,7 +419,7 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                             />
                                         </div>
                                         <div>
-                                            <Label htmlFor="animation_out_duration_seconds">Fade ut sekunder</Label>
+                                            <Label htmlFor="animation_out_duration_seconds">Fade out seconds</Label>
                                             <Input
                                                 id="animation_out_duration_seconds"
                                                 name="animation_out_duration_seconds"
@@ -422,67 +430,67 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                             />
                                         </div>
                                         <div>
-                                            <Label htmlFor="shape_style">Form</Label>
+                                            <Label htmlFor="shape_style">Shape</Label>
                                             <Select name="shape_style" defaultValue={settings.shape_style}>
                                                 <SelectTrigger id="shape_style" className="mt-1 w-full">
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="bar">Rak lower-third</SelectItem>
-                                                    <SelectItem value="pill">Rundad pill</SelectItem>
-                                                    <SelectItem value="angled">Sned kant</SelectItem>
+                                                    <SelectItem value="bar">Straight lower-third</SelectItem>
+                                                    <SelectItem value="pill">Rounded pill</SelectItem>
+                                                    <SelectItem value="angled">Angled edge</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
                                         <div>
-                                            <Label htmlFor="label_position">Rubrikposition</Label>
+                                            <Label htmlFor="label_position">Headline position</Label>
                                             <Select name="label_position" defaultValue={settings.label_position}>
                                                 <SelectTrigger id="label_position" className="mt-1 w-full">
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="left">Vänster</SelectItem>
-                                                    <SelectItem value="right">Höger</SelectItem>
+                                                    <SelectItem value="left">Left</SelectItem>
+                                                    <SelectItem value="right">Right</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
                                         <div>
-                                            <Label htmlFor="chroma_key_color">Chromakey</Label>
+                                            <Label htmlFor="chroma_key_color">Chroma key</Label>
                                             <Select name="chroma_key_color" defaultValue={settings.chroma_key_color}>
                                                 <SelectTrigger id="chroma_key_color" className="mt-1 w-full">
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="green">Grön</SelectItem>
-                                                    <SelectItem value="blue">Blå</SelectItem>
+                                                    <SelectItem value="green">Green</SelectItem>
+                                                    <SelectItem value="blue">Blue</SelectItem>
                                                     <SelectItem value="magenta">Magenta</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
                                         <div>
-                                            <Label htmlFor="image_url">Bild URL</Label>
+                                            <Label htmlFor="image_url">Image URL</Label>
                                             <Input id="image_url" name="image_url" type="url" defaultValue={settings.image_url ?? ''} placeholder="https://.../logo.png" />
                                         </div>
                                         <div>
-                                            <Label htmlFor="crawl_duration_seconds">Scrolltid sekunder</Label>
+                                            <Label htmlFor="crawl_duration_seconds">Scroll duration seconds</Label>
                                             <Input id="crawl_duration_seconds" name="crawl_duration_seconds" type="number" min="10" max="180" defaultValue={settings.crawl_duration_seconds} />
                                         </div>
                                         <div>
-                                            <Label htmlFor="message_display_seconds">Visningstid för kötext</Label>
+                                            <Label htmlFor="message_display_seconds">Message display seconds</Label>
                                             <Input id="message_display_seconds" name="message_display_seconds" type="number" min="5" max="120" defaultValue={settings.message_display_seconds} />
                                         </div>
                                         <div>
-                                            <Label htmlFor="poll_interval_seconds">Uppdateringsintervall</Label>
+                                            <Label htmlFor="poll_interval_seconds">Refresh interval</Label>
                                             <Input id="poll_interval_seconds" name="poll_interval_seconds" type="number" min="5" max="120" defaultValue={settings.poll_interval_seconds} />
                                         </div>
                                         <label className="flex items-center gap-2 text-sm">
                                             <input type="hidden" name="show_rss" value="0" />
                                             <Checkbox name="show_rss" value="1" defaultChecked={settings.show_rss} />
-                                            Visa RSS
+                                            Show RSS
                                         </label>
                                         <Button type="submit" disabled={processing}>
                                             <RadioTower />
-                                            Spara ticker
+                                            Save ticker
                                         </Button>
                                     </>
                                 )}

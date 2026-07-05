@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('ticker_settings', function (Blueprint $table) {
             $table->id();
-            $table->string('headline')->default('Senaste nytt');
+            $table->string('headline')->default('Latest news');
             $table->string('background_color')->default('#111827');
             $table->string('text_color')->default('#ffffff');
             $table->string('accent_color')->default('#38bdf8');

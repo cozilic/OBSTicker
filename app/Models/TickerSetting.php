@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
 
 class TickerSetting extends Model
 {
@@ -31,9 +30,9 @@ class TickerSetting extends Model
     ];
 
     protected $attributes = [
-        'headline' => 'Senaste nytt',
-        'rss_headline' => 'Senaste nytt',
-        'user_headline' => 'Senaste text',
+        'headline' => 'Latest news',
+        'rss_headline' => 'Latest news',
+        'user_headline' => 'Latest text',
         'background_color' => '#111827',
         'text_color' => '#ffffff',
         'accent_color' => '#38bdf8',
@@ -68,9 +67,36 @@ class TickerSetting extends Model
     public static function current(?User $owner = null): self
     {
         if ($owner === null) {
-            return self::query()->firstOrCreate(['id' => 1]);
+            return self::query()->firstOrCreate(['id' => 1], self::defaultAttributes());
         }
 
-        return self::query()->firstOrCreate(['owner_id' => $owner->id]);
+        return self::query()->firstOrCreate(['owner_id' => $owner->id], self::defaultAttributes());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function defaultAttributes(): array
+    {
+        return [
+            'headline' => 'Latest news',
+            'rss_headline' => 'Latest news',
+            'user_headline' => 'Latest text',
+            'background_color' => '#111827',
+            'text_color' => '#ffffff',
+            'accent_color' => '#38bdf8',
+            'canvas_width' => 1920,
+            'canvas_height' => 1080,
+            'animation_style' => 'slide-left',
+            'animation_duration_seconds' => 1,
+            'animation_out_duration_seconds' => 1,
+            'shape_style' => 'bar',
+            'label_position' => 'left',
+            'chroma_key_color' => 'green',
+            'crawl_duration_seconds' => 35,
+            'message_display_seconds' => 18,
+            'poll_interval_seconds' => 15,
+            'show_rss' => true,
+        ];
     }
 }

@@ -151,8 +151,8 @@ test('public ticker payload prioritizes queued user text over rss', function () 
     $this->getJson(route('ticker.payload', ['uuid' => $owner->ticker_uuid]))
         ->assertSuccessful()
         ->assertJsonPath('settings.headline', 'OBS')
-        ->assertJsonPath('settings.rss_headline', 'Senaste nytt')
-        ->assertJsonPath('settings.user_headline', 'Senaste text')
+        ->assertJsonPath('settings.rss_headline', 'Latest news')
+        ->assertJsonPath('settings.user_headline', 'Latest text')
         ->assertJsonPath('settings.canvas_width', 1920)
         ->assertJsonPath('settings.canvas_height', 1080)
         ->assertJsonPath('settings.animation_style', 'slide-left')
@@ -163,6 +163,16 @@ test('public ticker payload prioritizes queued user text over rss', function () 
         ->assertJsonCount(1, 'items');
 
     expect(TickerMessage::query()->firstOrFail()->status)->toBe('playing');
+});
+
+test('ticker settings default to english', function () {
+    $user = User::factory()->create();
+
+    $settings = TickerSetting::current($user);
+
+    expect($settings->headline)->toBe('Latest news')
+        ->and($settings->rss_headline)->toBe('Latest news')
+        ->and($settings->user_headline)->toBe('Latest text');
 });
 
 test('public ticker payload uses rss when the user queue is empty', function () {
@@ -303,8 +313,8 @@ test('ticker settings can be updated', function () {
     $this->actingAs($user)
         ->put(route('ticker.settings.update'), [
             'headline' => 'Live',
-            'rss_headline' => 'Nyheter',
-            'user_headline' => 'Senaste chatt',
+            'rss_headline' => 'News',
+            'user_headline' => 'Latest chat',
             'background_color' => '#020617',
             'text_color' => '#f8fafc',
             'accent_color' => '#22c55e',
@@ -327,8 +337,8 @@ test('ticker settings can be updated', function () {
     $settings = TickerSetting::current($user);
 
     expect($settings->headline)->toBe('Live')
-        ->and($settings->rss_headline)->toBe('Nyheter')
-        ->and($settings->user_headline)->toBe('Senaste chatt')
+        ->and($settings->rss_headline)->toBe('News')
+        ->and($settings->user_headline)->toBe('Latest chat')
         ->and($settings->canvas_width)->toBe(1280)
         ->and($settings->canvas_height)->toBe(720)
         ->and($settings->animation_duration_seconds)->toBe(2)
