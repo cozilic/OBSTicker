@@ -6,13 +6,14 @@ use App\Http\Requests\StoreTickerMessageRequest;
 use App\Models\TickerMessage;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 class TickerMessageController extends Controller
 {
     public function store(StoreTickerMessageRequest $request): RedirectResponse
     {
-        /** @var User $user */
-        $user = $request->user();
+        $user = $request->user('web');
+        abort_unless($user instanceof User, 403);
 
         TickerMessage::query()->create([
             ...$request->validated(),
@@ -26,9 +27,11 @@ class TickerMessageController extends Controller
         return back();
     }
 
-    public function destroy(TickerMessage $tickerMessage): RedirectResponse
+    public function destroy(Request $request, TickerMessage $tickerMessage): RedirectResponse
     {
-        abort_unless($tickerMessage->owner_id === request()->user()?->ownerAccountId(), 403);
+        $user = $request->user('web');
+        abort_unless($user instanceof User, 403);
+        abort_unless($tickerMessage->owner_id === $user->ownerAccountId(), 403);
 
         $tickerMessage->delete();
 

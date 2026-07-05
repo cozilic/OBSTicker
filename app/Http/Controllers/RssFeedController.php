@@ -6,14 +6,15 @@ use App\Http\Requests\StoreRssFeedRequest;
 use App\Models\RssFeed;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
 class RssFeedController extends Controller
 {
     public function store(StoreRssFeedRequest $request): RedirectResponse
     {
-        /** @var User $user */
-        $user = $request->user();
+        $user = $request->user('web');
+        abort_unless($user instanceof User, 403);
 
         RssFeed::query()->create([
             ...$request->validated(),
@@ -26,9 +27,11 @@ class RssFeedController extends Controller
         return back();
     }
 
-    public function destroy(RssFeed $rssFeed): RedirectResponse
+    public function destroy(Request $request, RssFeed $rssFeed): RedirectResponse
     {
-        abort_unless($rssFeed->owner_id === request()->user()?->ownerAccountId(), 403);
+        $user = $request->user('web');
+        abort_unless($user instanceof User, 403);
+        abort_unless($rssFeed->owner_id === $user->ownerAccountId(), 403);
 
         Cache::forget("ticker:rss-feed:{$rssFeed->owner_id}:{$rssFeed->id}");
 
