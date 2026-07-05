@@ -55,6 +55,7 @@ class TickerDashboardController extends Controller
                 'crawl_duration_seconds',
                 'message_display_seconds',
                 'poll_interval_seconds',
+                'require_auth_to_submit',
                 'show_rss',
             ]),
             'moderators' => $user->isOwner()

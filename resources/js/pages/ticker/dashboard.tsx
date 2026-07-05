@@ -54,6 +54,7 @@ type TickerSettings = {
     crawl_duration_seconds: number;
     message_display_seconds: number;
     poll_interval_seconds: number;
+    require_auth_to_submit: boolean;
     show_rss: boolean;
 };
 
@@ -483,6 +484,11 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                             <Label htmlFor="poll_interval_seconds">Refresh interval</Label>
                                             <Input id="poll_interval_seconds" name="poll_interval_seconds" type="number" min="5" max="120" defaultValue={settings.poll_interval_seconds} />
                                         </div>
+                                        <label className="flex items-center gap-2 text-sm">
+                                            <input type="hidden" name="require_auth_to_submit" value="0" />
+                                            <Checkbox name="require_auth_to_submit" value="1" defaultChecked={settings.require_auth_to_submit} />
+                                            Require login to submit
+                                        </label>
                                         <label className="flex items-center gap-2 text-sm">
                                             <input type="hidden" name="show_rss" value="0" />
                                             <Checkbox name="show_rss" value="1" defaultChecked={settings.show_rss} />

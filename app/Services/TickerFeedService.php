@@ -61,13 +61,6 @@ class TickerFeedService
         $rssLockUntil = Cache::get($rssLockKey);
         $rssItems = $settings->show_rss ? $this->rssItems($owner, $settings) : [];
 
-        if ($nextMessage && $this->hasActiveRssLock($rssLockUntil) && $rssItems !== []) {
-            return [
-                'settings' => $this->settingsPayload($settings),
-                'items' => $rssItems,
-            ];
-        }
-
         if ($nextMessage) {
             $nextMessage->update([
                 'status' => 'playing',

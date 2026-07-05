@@ -4,17 +4,23 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreTickerSubmissionRequest;
 use App\Models\TickerMessage;
+use App\Models\TickerSetting;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class TickerSubmissionController extends Controller
 {
-    public function create(Request $request): Response
+    public function create(Request $request): Response|RedirectResponse
     {
         $owner = $this->ownerFromRequest($request);
+
+        if ($owner && TickerSetting::current($owner)->require_auth_to_submit && ! Auth::check()) {
+            return redirect()->route('login');
+        }
 
         return Inertia::render('ticker/submit', [
             'tickerName' => $owner?->name,
@@ -27,6 +33,10 @@ class TickerSubmissionController extends Controller
         $owner = $this->ownerFromRequest($request);
 
         abort_if(! $owner, 404);
+
+        if (TickerSetting::current($owner)->require_auth_to_submit && ! $request->user()) {
+            return redirect()->route('login');
+        }
 
         $data = $request->validated();
 

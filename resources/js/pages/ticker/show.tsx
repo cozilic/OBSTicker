@@ -83,6 +83,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const [tickerDurationSeconds, setTickerDurationSeconds] = useState(payload.settings.crawl_duration_seconds);
     const [tickerTextFontSize, setTickerTextFontSize] = useState(22);
     const [viewportScale, setViewportScale] = useState(1);
+    const [tickerStartOffset, setTickerStartOffset] = useState(100);
     const isVisible = payload.items.length > 0;
     const useDefaultTickerSkin = !useChromaKey;
     const currentItem = useMemo(() => {
@@ -155,6 +156,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const shellStyle: CSSProperties & {
         '--lower-third-in-duration': string;
         '--lower-third-out-duration': string;
+        '--ticker-start-offset': string;
     } = {
         bottom: '0',
         height: `${shellHeight}px`,
@@ -166,6 +168,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
         color: tickerTextColor,
         zIndex: 1,
         gridTemplateColumns: shellColumns,
+        '--ticker-start-offset': `${tickerStartOffset}px`,
         '--lower-third-in-duration': shellAnimationInDuration,
         '--lower-third-out-duration': shellAnimationOutDuration,
     };
@@ -192,6 +195,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                 setTickerDurationSeconds(tickerMinDurationSeconds);
                 setTickerTextFontSize(tickerFontSize);
                 setViewportScale(clamp((window.innerWidth || payload.settings.canvas_width) / payload.settings.canvas_width, 0.55, 1));
+                setTickerStartOffset(window.innerWidth || payload.settings.canvas_width);
             });
 
             return;
@@ -203,6 +207,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
             const trackWidth = tickerTrackRef.current?.scrollWidth ?? 0;
             const travelDistance = viewportWidth + trackWidth;
             const estimatedDurationSeconds = Math.ceil(travelDistance / 90);
+            const nextTickerStartOffset = tickerViewportRef.current?.clientWidth ?? window.innerWidth;
             const nextFontSize = fitTextToWidth(tickerText, {
                 maxSize: Math.max(16, Math.round(tickerFontSize * nextViewportScale)),
                 minSize: 16,
@@ -213,6 +218,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
             setTickerDurationSeconds(Math.max(tickerMinDurationSeconds, estimatedDurationSeconds));
             setTickerTextFontSize(nextFontSize);
             setViewportScale(nextViewportScale);
+            setTickerStartOffset(nextTickerStartOffset);
         };
 
         measureDuration();

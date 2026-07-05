@@ -7,8 +7,6 @@ use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
-use function Pest\Laravel\travel;
-
 test('ticker admin redirects to registration before the first admin exists', function () {
     $this->get(route('ticker.dashboard'))
         ->assertRedirect(route('register'));
@@ -108,6 +106,31 @@ test('public users can submit text to the ticker queue', function () {
         ->and($message->submitter_name)->toBe('Patrik')
         ->and($message->content)->toBe('Hej från publiken')
         ->and($message->status)->toBe('queued');
+});
+
+test('submission page can require an authenticated user', function () {
+    $owner = User::factory()->create();
+    TickerSetting::current($owner)->update(['require_auth_to_submit' => true]);
+
+    $this->get(route('ticker.submit', ['uuid' => $owner->ticker_uuid]))
+        ->assertRedirect(route('login'));
+});
+
+test('authenticated users can submit when submission auth is required', function () {
+    $owner = User::factory()->create();
+    $user = User::factory()->create();
+    TickerSetting::current($owner)->update(['require_auth_to_submit' => true]);
+
+    $this->actingAs($user)
+        ->post(route('ticker.submissions.store', ['uuid' => $owner->ticker_uuid]), [
+            'submitter_name' => 'Patrik',
+            'content' => 'Hej med inloggning',
+        ])
+        ->assertRedirect();
+
+    $message = TickerMessage::query()->firstOrFail();
+
+    expect($message->content)->toBe('Hej med inloggning');
 });
 
 test('public ticker submissions use the submitter name as label', function () {
@@ -243,7 +266,7 @@ test('public ticker payload interleaves multiple rss feeds', function () {
         ->assertJsonCount(3, 'items');
 });
 
-test('queued text waits until the current rss cycle ends before taking over', function () {
+test('queued text preempts rss playback immediately', function () {
     $owner = User::factory()->create();
 
     Http::fake([
@@ -276,35 +299,10 @@ test('queued text waits until the current rss cycle ends before taking over', fu
 
     $this->getJson(route('ticker.payload', ['uuid' => $owner->ticker_uuid]))
         ->assertSuccessful()
-        ->assertJsonPath('items.0.type', 'rss')
-        ->assertJsonPath('items.0.text', 'RSS rubrik ett')
-        ->assertJsonPath('items.1.type', 'rss')
-        ->assertJsonPath('items.1.text', 'RSS rubrik två');
-
-    travel(36)->seconds();
-
-    $this->getJson(route('ticker.payload', ['uuid' => $owner->ticker_uuid]))
-        ->assertSuccessful()
-        ->assertJsonPath('items.0.type', 'rss')
-        ->assertJsonPath('items.0.text', 'RSS rubrik två')
-        ->assertJsonPath('items.1.type', 'rss')
-        ->assertJsonPath('items.1.text', 'RSS rubrik ett');
-
-    travel(55)->seconds();
-
-    $this->getJson(route('ticker.payload', ['uuid' => $owner->ticker_uuid]))
-        ->assertSuccessful()
         ->assertJsonPath('items.0.type', 'message')
         ->assertJsonPath('items.0.text', 'Ny text ska vänta');
 
-    travel(20)->seconds();
-
-    $this->getJson(route('ticker.payload', ['uuid' => $owner->ticker_uuid]))
-        ->assertSuccessful()
-        ->assertJsonPath('items.0.type', 'rss')
-        ->assertJsonPath('items.0.text', 'RSS rubrik två');
-
-    expect(TickerMessage::query()->firstOrFail()->status)->toBe('played');
+    expect(TickerMessage::query()->firstOrFail()->status)->toBe('playing');
 });
 
 test('ticker settings can be updated', function () {

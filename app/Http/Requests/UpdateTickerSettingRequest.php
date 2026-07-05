@@ -42,6 +42,7 @@ class UpdateTickerSettingRequest extends FormRequest
             'crawl_duration_seconds' => ['required', 'integer', 'min:10', 'max:180'],
             'message_display_seconds' => ['required', 'integer', 'min:5', 'max:120'],
             'poll_interval_seconds' => ['required', 'integer', 'min:5', 'max:120'],
+            'require_auth_to_submit' => ['sometimes', 'boolean'],
             'show_rss' => ['sometimes', 'boolean'],
         ];
     }

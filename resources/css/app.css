@@ -144,7 +144,7 @@
 
 @keyframes ticker-scroll {
     from {
-        transform: translateX(100vw);
+        transform: translateX(var(--ticker-start-offset, 100vw));
     }
 
     to {
