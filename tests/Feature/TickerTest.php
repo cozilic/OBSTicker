@@ -66,6 +66,22 @@ test('dashboard exposes owner specific submit link', function () {
             ->where('submitUrl', route('ticker.submit', ['uuid' => $user->ticker_uuid])));
 });
 
+test('moderator dashboard exposes owner specific submit link', function () {
+    $owner = User::factory()->create();
+    $moderator = User::factory()->create([
+        'role' => 'moderator',
+        'owner_id' => $owner->id,
+        'ticker_uuid' => null,
+    ]);
+
+    $this->actingAs($moderator)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('dashboard')
+            ->where('submitUrl', route('ticker.submit', ['uuid' => $owner->ticker_uuid])));
+});
+
 test('public ticker page renders the fullscreen ticker view', function () {
     $owner = User::factory()->create();
 

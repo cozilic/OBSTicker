@@ -16,6 +16,7 @@ class DashboardController extends Controller
         /** @var User $user */
         $user = $request->user();
         $ownerId = $user->ownerAccountId();
+        $owner = User::query()->findOrFail($ownerId);
 
         return Inertia::render('dashboard', [
             'stats' => [
@@ -35,7 +36,7 @@ class DashboardController extends Controller
                 ->latest()
                 ->limit(5)
                 ->get(['id', 'source_type', 'submitter_name', 'content', 'status', 'created_at']),
-            'submitUrl' => route('ticker.submit', ['uuid' => $user->ticker_uuid]),
+            'submitUrl' => route('ticker.submit', ['uuid' => $owner->ticker_uuid]),
         ]);
     }
 }

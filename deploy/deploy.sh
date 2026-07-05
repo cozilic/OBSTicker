@@ -70,7 +70,7 @@ git clean -fd
 fix_permissions() {
     mkdir -p storage/logs storage/framework/cache storage/framework/sessions bootstrap/cache
 
-    chmod -R a+rwX storage bootstrap/cache
+    chmod -R a+rwX storage bootstrap/cache database
 
     if [ -f database/database.sqlite ]; then
         chmod 666 database/database.sqlite
