@@ -2,7 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { MessageSquare, RadioTower, Rss, Users } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { dashboard } from '@/routes';
-import { dashboard as tickerDashboard, submit } from '@/routes/ticker';
+import { dashboard as tickerDashboard } from '@/routes/ticker';
 
 type DashboardStats = {
     queuedMessages: number;
@@ -25,6 +25,7 @@ type LatestMessage = {
 type Props = {
     stats: DashboardStats;
     latestMessages: LatestMessage[];
+    submitUrl: string;
 };
 
 const statusLabel: Record<LatestMessage['status'], string> = {
@@ -33,7 +34,7 @@ const statusLabel: Record<LatestMessage['status'], string> = {
     played: 'Klar',
 };
 
-export default function Dashboard({ stats, latestMessages }: Props) {
+export default function Dashboard({ stats, latestMessages, submitUrl }: Props) {
     return (
         <>
             <Head title="Dashboard" />
@@ -45,9 +46,9 @@ export default function Dashboard({ stats, latestMessages }: Props) {
                     </div>
                     <div className="flex flex-wrap gap-2 text-sm">
                         <Link href={tickerDashboard()} className="rounded-md border px-3 py-2 hover:bg-accent">
-                            Öppna admin
+                            Adminpanel
                         </Link>
-                        <Link href={submit()} className="rounded-md border px-3 py-2 hover:bg-accent">
+                        <Link href={submitUrl} className="rounded-md border px-3 py-2 hover:bg-accent">
                             Inskickssida
                         </Link>
                     </div>

@@ -6,6 +6,7 @@ use App\Models\TickerSetting;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
+
 use function Pest\Laravel\travel;
 
 test('ticker admin redirects to registration before the first admin exists', function () {
@@ -51,6 +52,17 @@ test('ticker dashboard exposes owner specific links', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('ticker/dashboard')
             ->where('tickerUrl', route('ticker.show', ['uuid' => $user->ticker_uuid]))
+            ->where('submitUrl', route('ticker.submit', ['uuid' => $user->ticker_uuid])));
+});
+
+test('dashboard exposes owner specific submit link', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('dashboard')
             ->where('submitUrl', route('ticker.submit', ['uuid' => $user->ticker_uuid])));
 });
 

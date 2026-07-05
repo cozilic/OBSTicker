@@ -35,6 +35,7 @@ class DashboardController extends Controller
                 ->latest()
                 ->limit(5)
                 ->get(['id', 'source_type', 'submitter_name', 'content', 'status', 'created_at']),
+            'submitUrl' => route('ticker.submit', ['uuid' => $user->ticker_uuid]),
         ]);
     }
 }
