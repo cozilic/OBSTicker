@@ -3,6 +3,7 @@ export type User = {
     name: string;
     email: string;
     role: 'owner' | 'moderator';
+    locale: 'en' | 'sv';
     avatar?: string;
     email_verified_at: string | null;
     created_at: string;

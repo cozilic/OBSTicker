@@ -29,14 +29,14 @@ export default function Welcome() {
                 <section className="mx-auto grid w-full max-w-6xl items-center gap-10 px-5 py-14 md:min-h-[calc(100vh-88px)] md:grid-cols-[1fr_0.9fr]">
                     <div className="flex flex-col gap-7">
                         <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-sm text-cyan-100">
-                            Live lower-third för OBS Browser Source
+                            Live lower-third for OBS Browser Source
                         </div>
                         <div className="space-y-5">
                             <h1 className="max-w-3xl text-5xl leading-[1.02] font-semibold tracking-normal md:text-7xl">
-                                Publik text och RSS i samma snygga ticker.
+                                Audience messages and RSS in one polished ticker.
                             </h1>
                             <p className="max-w-2xl text-lg leading-8 text-neutral-300">
-                                Låt tittare skicka in korta meddelanden. När kön är tom fyller RSS-flöden lower-third-raden automatiskt.
+                                Let viewers send short messages. When the queue is empty, RSS feeds automatically fill the lower-third.
                             </p>
                         </div>
                         <div className="flex flex-wrap gap-3">
@@ -55,9 +55,9 @@ export default function Welcome() {
                             className="aspect-video w-full rounded-md object-cover"
                         />
                         <div className="mt-5 grid gap-3 text-sm text-neutral-300 sm:grid-cols-3">
-                            <div className="rounded-md bg-white/5 p-3">Kö före RSS</div>
-                            <div className="rounded-md bg-white/5 p-3">Animation in/ut</div>
-                            <div className="rounded-md bg-white/5 p-3">Moderatorläge</div>
+                            <div className="rounded-md bg-white/5 p-3">Queue before RSS</div>
+                            <div className="rounded-md bg-white/5 p-3">Animation in/out</div>
+                            <div className="rounded-md bg-white/5 p-3">Moderator mode</div>
                         </div>
                     </div>
                 </section>

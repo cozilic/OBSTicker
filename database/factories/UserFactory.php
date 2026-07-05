@@ -32,6 +32,7 @@ class UserFactory extends Factory
             'role' => 'owner',
             'owner_id' => null,
             'ticker_uuid' => (string) Str::uuid(),
+            'locale' => 'en',
             'remember_token' => Str::random(10),
         ];
     }

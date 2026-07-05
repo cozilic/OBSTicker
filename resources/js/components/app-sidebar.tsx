@@ -12,13 +12,14 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { useTranslation } from '@/lib/i18n';
 import { dashboard } from '@/routes';
 import { dashboard as tickerDashboard } from '@/routes/ticker';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
     {
-        title: 'Dashboard',
+        title: 'overview',
         href: dashboard(),
         icon: LayoutGrid,
     },
@@ -30,6 +31,12 @@ const mainNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
+    const { t } = useTranslation();
+    const translatedMainNavItems = mainNavItems.map((item) => ({
+        ...item,
+        title: item.title === 'overview' ? t('overview') : item.title,
+    }));
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
@@ -45,7 +52,7 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
+                <NavMain items={translatedMainNavItems} />
             </SidebarContent>
 
             <SidebarFooter>

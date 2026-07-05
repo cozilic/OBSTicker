@@ -1,8 +1,8 @@
 import { Head, Link } from '@inertiajs/react';
 import { MessageSquare, RadioTower, Rss, Users } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useTranslation } from '@/lib/i18n';
 import { dashboard } from '@/routes';
-import { dashboard as tickerDashboard } from '@/routes/ticker';
 
 type DashboardStats = {
     queuedMessages: number;
@@ -28,52 +28,50 @@ type Props = {
     submitUrl: string;
 };
 
-const statusLabel: Record<LatestMessage['status'], string> = {
-    queued: 'I kö',
-    playing: 'Spelas',
-    played: 'Klar',
-};
-
 export default function Dashboard({ stats, latestMessages, submitUrl }: Props) {
+    const { t } = useTranslation();
+    const statusLabel: Record<LatestMessage['status'], string> = {
+        queued: t('queued'),
+        playing: t('playing'),
+        played: t('done'),
+    };
+
     return (
         <>
-            <Head title="Dashboard" />
+            <Head title={t('overview')} />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
                     <div>
-                        <h1 className="text-2xl font-semibold tracking-normal">Dashboard</h1>
-                        <p className="text-muted-foreground text-sm">Överblick över kö, RSS och moderatorer.</p>
+                        <h1 className="text-2xl font-semibold tracking-normal">{t('overview')}</h1>
+                        <p className="text-muted-foreground text-sm">{t('overviewDescription')}</p>
                     </div>
                     <div className="flex flex-wrap gap-2 text-sm">
-                        <Link href={tickerDashboard()} className="rounded-md border px-3 py-2 hover:bg-accent">
-                            Adminpanel
-                        </Link>
                         <Link href={submitUrl} className="rounded-md border px-3 py-2 hover:bg-accent">
-                            Inskickssida
+                            {t('submissionPage')}
                         </Link>
                     </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <StatCard title="I kö" value={stats.queuedMessages} description={`${stats.playingMessages} spelas just nu`} icon={MessageSquare} />
-                    <StatCard title="Dagens inskick" value={stats.todaysSubmissions} description="Publika användartexter" icon={RadioTower} />
-                    <StatCard title="Aktiva RSS" value={stats.activeRssFeeds} description="Källor som kan fylla tom kö" icon={Rss} />
-                    <StatCard title="Moderatorer" value={stats.moderators} description={`${stats.playedMessages} texter har spelats`} icon={Users} />
+                    <StatCard title={t('queued')} value={stats.queuedMessages} description={`${stats.playingMessages} ${t('playingNow')}`} icon={MessageSquare} />
+                    <StatCard title={t('todaysSubmissions')} value={stats.todaysSubmissions} description={t('todaysSubmissionsDescription')} icon={RadioTower} />
+                    <StatCard title={t('activeRss')} value={stats.activeRssFeeds} description={t('activeRssDescription')} icon={Rss} />
+                    <StatCard title={t('moderators')} value={stats.moderators} description={`${stats.playedMessages} ${t('messagesHavePlayed')}`} icon={Users} />
                 </div>
 
                 <Card className="rounded-lg">
                     <CardHeader>
-                        <CardTitle>Senaste texter</CardTitle>
-                        <CardDescription>De senaste inskicken och admintexterna i tickerflödet.</CardDescription>
+                        <CardTitle>{t('latestMessages')}</CardTitle>
+                        <CardDescription>{t('latestMessagesDescription')}</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="divide-y rounded-md border">
-                            {latestMessages.length === 0 && <p className="text-muted-foreground p-4 text-sm">Inga texter ännu.</p>}
+                            {latestMessages.length === 0 && <p className="text-muted-foreground p-4 text-sm">{t('noMessagesYet')}</p>}
                             {latestMessages.map((message) => (
                                 <div key={message.id} className="grid gap-2 p-4 md:grid-cols-[1fr_auto] md:items-center">
                                     <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                            <span>{message.source_type === 'user' ? 'Användare' : 'Admin'}</span>
+                                            <span>{message.source_type === 'user' ? t('user') : t('admin')}</span>
                                             {message.submitter_name && <span>{message.submitter_name}</span>}
                                             <span>{statusLabel[message.status]}</span>
                                         </div>
@@ -118,7 +116,7 @@ function StatCard({
 Dashboard.layout = {
     breadcrumbs: [
         {
-            title: 'Dashboard',
+            title: 'Overview',
             href: dashboard(),
         },
     ],
