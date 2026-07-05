@@ -487,7 +487,7 @@ export default function TickerDashboard({ messages, rssFeeds, settings, moderato
                                         <label className="flex items-center gap-2 text-sm">
                                             <input type="hidden" name="require_auth_to_submit" value="0" />
                                             <Checkbox name="require_auth_to_submit" value="1" defaultChecked={settings.require_auth_to_submit} />
-                                            Require login to submit
+                                            Require Twitch login to submit
                                         </label>
                                         <label className="flex items-center gap-2 text-sm">
                                             <input type="hidden" name="show_rss" value="0" />

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\RssFeed;
+use App\Models\SubmissionAccount;
 use App\Models\TickerMessage;
 use App\Models\TickerSetting;
 use App\Models\User;
@@ -108,29 +109,81 @@ test('public users can submit text to the ticker queue', function () {
         ->and($message->status)->toBe('queued');
 });
 
-test('submission page can require an authenticated user', function () {
+test('submission page prompts for twitch login when required', function () {
     $owner = User::factory()->create();
     TickerSetting::current($owner)->update(['require_auth_to_submit' => true]);
 
     $this->get(route('ticker.submit', ['uuid' => $owner->ticker_uuid]))
-        ->assertRedirect(route('login'));
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/submit')
+            ->where('requiresTwitchAuth', true)
+            ->where('isTwitchAuthenticated', false)
+            ->where('connectUrl', route('ticker.submitter.twitch.redirect', ['return_to' => route('ticker.submit', ['uuid' => $owner->ticker_uuid])]))
+            ->where('submitterName', null));
 });
 
-test('authenticated users can submit when submission auth is required', function () {
+test('submitters can authenticate with twitch', function () {
     $owner = User::factory()->create();
-    $user = User::factory()->create();
+
+    Http::fake([
+        'id.twitch.tv/oauth2/token' => Http::response([
+            'access_token' => 'twitch-access-token',
+            'expires_in' => 3600,
+            'token_type' => 'bearer',
+        ]),
+        'api.twitch.tv/helix/users' => Http::response([
+            'data' => [
+                [
+                    'id' => '123456',
+                    'login' => 'streamername',
+                    'display_name' => 'StreamerName',
+                    'profile_image_url' => 'https://example.com/avatar.png',
+                ],
+            ],
+        ]),
+    ]);
+
+    $this->withSession([
+        'ticker.submitter.state' => 'state-token',
+        'ticker.submitter.return_to' => route('ticker.submit', ['uuid' => $owner->ticker_uuid]),
+    ])
+        ->get(route('ticker.submitter.twitch.callback', [
+            'code' => 'auth-code',
+            'state' => 'state-token',
+        ]))
+        ->assertRedirect(route('ticker.submit', ['uuid' => $owner->ticker_uuid]));
+
+    $this->assertAuthenticated('submitter');
+
+    $submitter = SubmissionAccount::query()->firstOrFail();
+
+    expect($submitter->twitch_id)->toBe('123456')
+        ->and($submitter->twitch_login)->toBe('streamername')
+        ->and($submitter->display_name)->toBe('StreamerName')
+        ->and($submitter->avatar_url)->toBe('https://example.com/avatar.png');
+});
+
+test('authenticated twitch submitters can submit when submission auth is required', function () {
+    $owner = User::factory()->create();
+    $submitter = SubmissionAccount::query()->create([
+        'twitch_id' => '123456',
+        'twitch_login' => 'streamername',
+        'display_name' => 'StreamerName',
+        'avatar_url' => 'https://example.com/avatar.png',
+    ]);
     TickerSetting::current($owner)->update(['require_auth_to_submit' => true]);
 
-    $this->actingAs($user)
+    $this->actingAs($submitter, 'submitter')
         ->post(route('ticker.submissions.store', ['uuid' => $owner->ticker_uuid]), [
-            'submitter_name' => 'Patrik',
             'content' => 'Hej med inloggning',
         ])
         ->assertRedirect();
 
     $message = TickerMessage::query()->firstOrFail();
 
-    expect($message->content)->toBe('Hej med inloggning');
+    expect($message->content)->toBe('Hej med inloggning')
+        ->and($message->source_label)->toBe('StreamerName');
 });
 
 test('public ticker submissions use the submitter name as label', function () {

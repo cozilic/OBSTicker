@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SubmissionAccount;
 use App\Models\User;
 
 return [
@@ -42,6 +43,10 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'submitter' => [
+            'driver' => 'session',
+            'provider' => 'submission_accounts',
+        ],
     ],
 
     /*
@@ -65,6 +70,10 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+        'submission_accounts' => [
+            'driver' => 'eloquent',
+            'model' => SubmissionAccount::class,
         ],
 
         // 'users' => [

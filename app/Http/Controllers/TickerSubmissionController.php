@@ -14,17 +14,21 @@ use Inertia\Response;
 
 class TickerSubmissionController extends Controller
 {
-    public function create(Request $request): Response|RedirectResponse
+    public function create(Request $request): Response
     {
         $owner = $this->ownerFromRequest($request);
-
-        if ($owner && TickerSetting::current($owner)->require_auth_to_submit && ! Auth::check()) {
-            return redirect()->route('login');
-        }
+        $submitter = Auth::guard('submitter')->user();
+        $requiresTwitchAuth = $owner !== null && TickerSetting::current($owner)->require_auth_to_submit;
 
         return Inertia::render('ticker/submit', [
             'tickerName' => $owner?->name,
-            'submissionUrl' => route('ticker.submissions.store', ['uuid' => $owner?->ticker_uuid]),
+            'submissionUrl' => $this->submissionUrl($owner),
+            'connectUrl' => route('ticker.submitter.twitch.redirect', [
+                'return_to' => $this->submissionPageUrl($owner),
+            ]),
+            'requiresTwitchAuth' => $requiresTwitchAuth,
+            'isTwitchAuthenticated' => $submitter !== null,
+            'submitterName' => $submitter?->display_name,
         ]);
     }
 
@@ -34,8 +38,12 @@ class TickerSubmissionController extends Controller
 
         abort_if(! $owner, 404);
 
-        if (TickerSetting::current($owner)->require_auth_to_submit && ! $request->user()) {
-            return redirect()->route('login');
+        $submitter = Auth::guard('submitter')->user();
+
+        if (TickerSetting::current($owner)->require_auth_to_submit && $submitter === null) {
+            return redirect()->route('ticker.submitter.twitch.redirect', [
+                'return_to' => $this->submissionPageUrl($owner),
+            ]);
         }
 
         $data = $request->validated();
@@ -44,7 +52,7 @@ class TickerSubmissionController extends Controller
             ...$data,
             'owner_id' => $owner->id,
             'source_type' => 'user',
-            'source_label' => $data['submitter_name'] ?: 'Publik',
+            'source_label' => $submitter?->display_name ?: ($data['submitter_name'] ?: 'Publik'),
             'status' => 'queued',
             'is_active' => true,
             'sort_order' => 0,
@@ -62,5 +70,19 @@ class TickerSubmissionController extends Controller
         }
 
         return User::query()->where('role', 'owner')->oldest()->first();
+    }
+
+    private function submissionUrl(?User $owner): string
+    {
+        return $owner?->ticker_uuid
+            ? route('ticker.submissions.store', ['uuid' => $owner->ticker_uuid])
+            : route('ticker.submissions.store');
+    }
+
+    private function submissionPageUrl(?User $owner): string
+    {
+        return $owner?->ticker_uuid
+            ? route('ticker.submit', ['uuid' => $owner->ticker_uuid])
+            : route('ticker.submit');
     }
 }

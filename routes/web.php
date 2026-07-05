@@ -1,9 +1,10 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\PublicTickerController;
 use App\Http\Controllers\ModeratorController;
+use App\Http\Controllers\PublicTickerController;
 use App\Http\Controllers\RssFeedController;
+use App\Http\Controllers\SubmitterTwitchAuthController;
 use App\Http\Controllers\TickerDashboardController;
 use App\Http\Controllers\TickerMessageController;
 use App\Http\Controllers\TickerSubmissionController;
@@ -15,6 +16,8 @@ Route::get('ticker', [PublicTickerController::class, 'show'])->name('ticker.show
 Route::get('ticker/payload', [PublicTickerController::class, 'payload'])->name('ticker.payload');
 Route::get('submit', [TickerSubmissionController::class, 'create'])->name('ticker.submit');
 Route::post('submit', [TickerSubmissionController::class, 'store'])->name('ticker.submissions.store');
+Route::get('submit/twitch/redirect', [SubmitterTwitchAuthController::class, 'redirect'])->name('ticker.submitter.twitch.redirect');
+Route::get('submit/twitch/callback', [SubmitterTwitchAuthController::class, 'callback'])->name('ticker.submitter.twitch.callback');
 Route::get('ticker-admin', TickerDashboardController::class)->name('ticker.dashboard');
 
 Route::middleware(['auth', 'verified'])->group(function () {
