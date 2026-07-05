@@ -48,23 +48,12 @@ export default function Welcome() {
                         </div>
                     </div>
 
-                    <div className="relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/40">
-                        <div className="mb-6 flex items-center justify-between text-sm text-neutral-400">
-                            <span>OBS preview</span>
-                            <span>Browser Source</span>
-                        </div>
-                        <div className="aspect-video overflow-hidden rounded-md bg-neutral-900">
-                            <div className="flex h-full items-end pb-10">
-                                <div className="grid h-16 w-full grid-cols-[170px_1fr] overflow-hidden bg-neutral-800 shadow-2xl">
-                                    <div className="flex items-center justify-center bg-cyan-300 px-5 text-sm font-bold text-neutral-950 uppercase">
-                                        Senaste text
-                                    </div>
-                                    <div className="flex min-w-0 items-center px-6 text-xl font-semibold">
-                                        <span className="truncate">Patrik: Kan ni visa nästa gäst igen?</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                    <div className="relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/40">
+                        <img
+                            src="/images/home-screenshot.png"
+                            alt="OBSTicker running as a lower-third news ticker overlay in a game stream"
+                            className="aspect-video w-full rounded-md object-cover"
+                        />
                         <div className="mt-5 grid gap-3 text-sm text-neutral-300 sm:grid-cols-3">
                             <div className="rounded-md bg-white/5 p-3">Kö före RSS</div>
                             <div className="rounded-md bg-white/5 p-3">Animation in/ut</div>
