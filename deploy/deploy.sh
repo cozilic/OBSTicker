@@ -80,6 +80,7 @@ fix_permissions() {
 fix_permissions
 
 composer install --no-interaction --no-dev --prefer-dist --optimize-autoloader --no-progress
+php artisan route:clear
 npm ci
 npm run build
 
