@@ -7,6 +7,27 @@ The project is open source and can be downloaded, modified, and self-hosted from
 https://github.com/cozilic/OBSTicker
 
 <p align="center">
+    <a href="https://github.com/cozilic/OBSTicker/actions/workflows/tests.yml">
+        <img
+            src="https://github.com/cozilic/OBSTicker/actions/workflows/tests.yml/badge.svg?branch=main"
+            alt="Tests status"
+        />
+    </a>
+    <a href="https://github.com/cozilic/OBSTicker/actions/workflows/lint.yml">
+        <img
+            src="https://github.com/cozilic/OBSTicker/actions/workflows/lint.yml/badge.svg?branch=main"
+            alt="Lint status"
+        />
+    </a>
+    <a href="https://github.com/cozilic/OBSTicker/actions/workflows/deploy.yml">
+        <img
+            src="https://github.com/cozilic/OBSTicker/actions/workflows/deploy.yml/badge.svg?branch=main"
+            alt="Deploy status"
+        />
+    </a>
+</p>
+
+<p align="center">
     <img
         src="./public/images/ticker-logo-readme.png"
         alt="OBSTicker logo"
