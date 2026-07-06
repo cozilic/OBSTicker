@@ -18,17 +18,24 @@ class TickerSubmissionController extends Controller
     {
         $owner = $this->ownerFromRequest($request);
         $submitter = Auth::guard('submitter')->user();
-        $requiresTwitchAuth = $owner !== null && TickerSetting::current($owner)->require_auth_to_submit;
+        $settings = $owner !== null ? TickerSetting::current($owner) : null;
+        $requiresModerator = $settings instanceof TickerSetting && $settings->moderator_only_submissions;
+        $moderator = $owner !== null ? $this->workspaceUser($request, $owner) : null;
+        $isModeratorAuthenticated = $moderator !== null;
+        $requiresTwitchAuth = ! $requiresModerator && $settings instanceof TickerSetting && $settings->require_auth_to_submit;
 
         return Inertia::render('ticker/submit', [
             'tickerName' => $owner?->name,
             'submissionUrl' => $this->submissionUrl($owner),
+            'loginUrl' => route('login'),
             'connectUrl' => route('ticker.submitter.twitch.redirect', [
                 'return_to' => $this->submissionPageUrl($owner),
             ]),
             'requiresTwitchAuth' => $requiresTwitchAuth,
+            'requiresModerator' => $requiresModerator,
+            'isModeratorAuthenticated' => $isModeratorAuthenticated,
             'isTwitchAuthenticated' => $submitter !== null,
-            'submitterName' => $submitter?->display_name,
+            'submitterName' => $moderator instanceof User ? $moderator->name : $submitter?->display_name,
         ]);
     }
 
@@ -39,8 +46,14 @@ class TickerSubmissionController extends Controller
         abort_if(! $owner, 404);
 
         $submitter = Auth::guard('submitter')->user();
+        $settings = TickerSetting::current($owner);
+        $moderator = $this->workspaceUser($request, $owner);
 
-        if (TickerSetting::current($owner)->require_auth_to_submit && $submitter === null) {
+        if ($settings->moderator_only_submissions && $moderator === null) {
+            return redirect()->route('login');
+        }
+
+        if ($settings->require_auth_to_submit && $submitter === null) {
             return redirect()->route('ticker.submitter.twitch.redirect', [
                 'return_to' => $this->submissionPageUrl($owner),
             ]);
@@ -52,7 +65,7 @@ class TickerSubmissionController extends Controller
             ...$data,
             'owner_id' => $owner->id,
             'source_type' => 'user',
-            'source_label' => $submitter?->display_name ?: ($data['submitter_name'] ?: 'Publik'),
+            'source_label' => $moderator instanceof User ? $moderator->name : ($submitter?->display_name ?: ($data['submitter_name'] ?: 'Publik')),
             'status' => 'queued',
             'is_active' => true,
             'sort_order' => 0,
@@ -70,6 +83,17 @@ class TickerSubmissionController extends Controller
         }
 
         return User::query()->where('role', 'owner')->oldest()->first();
+    }
+
+    private function workspaceUser(Request $request, User $owner): ?User
+    {
+        $user = $request->user('web');
+
+        if (! $user instanceof User || $user->ownerAccountId() !== $owner->id) {
+            return null;
+        }
+
+        return $user;
     }
 
     private function submissionUrl(?User $owner): string

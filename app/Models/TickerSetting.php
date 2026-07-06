@@ -27,6 +27,7 @@ class TickerSetting extends Model
         'message_display_seconds',
         'poll_interval_seconds',
         'require_auth_to_submit',
+        'moderator_only_submissions',
         'show_rss',
     ];
 
@@ -49,6 +50,7 @@ class TickerSetting extends Model
         'message_display_seconds' => 18,
         'poll_interval_seconds' => 15,
         'require_auth_to_submit' => false,
+        'moderator_only_submissions' => false,
         'show_rss' => true,
     ];
 
@@ -63,6 +65,7 @@ class TickerSetting extends Model
             'message_display_seconds' => 'integer',
             'poll_interval_seconds' => 'integer',
             'require_auth_to_submit' => 'boolean',
+            'moderator_only_submissions' => 'boolean',
             'show_rss' => 'boolean',
         ];
     }
@@ -100,6 +103,7 @@ class TickerSetting extends Model
             'message_display_seconds' => 18,
             'poll_interval_seconds' => 15,
             'require_auth_to_submit' => false,
+            'moderator_only_submissions' => false,
             'show_rss' => true,
         ];
     }

@@ -56,6 +56,7 @@ class TickerDashboardController extends Controller
                 'message_display_seconds',
                 'poll_interval_seconds',
                 'require_auth_to_submit',
+                'moderator_only_submissions',
                 'show_rss',
             ]),
             'moderators' => $user->isOwner()
@@ -80,6 +81,7 @@ class TickerDashboardController extends Controller
 
         TickerSetting::current($owner)->update([
             ...$request->validated(),
+            'moderator_only_submissions' => $request->boolean('moderator_only_submissions'),
             'show_rss' => $request->boolean('show_rss'),
         ]);
 

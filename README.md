@@ -159,6 +159,17 @@ Use the admin dashboard to manage messages, RSS feeds, moderators, and appearanc
 https://your-domain.example/ticker-admin
 ```
 
+## Quality checks
+
+The current codebase passes linting, type analysis, production build, and the test suite.
+
+```bash
+npm run lint:check
+composer types:check
+npm run build
+php artisan test --compact
+```
+
 ## Tests
 
 ```bash

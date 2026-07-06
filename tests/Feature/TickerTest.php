@@ -123,6 +123,58 @@ test('submission page prompts for twitch login when required', function () {
             ->where('submitterName', null));
 });
 
+test('submission page prompts for moderator login when moderator only submissions are enabled', function () {
+    $owner = User::factory()->create();
+    TickerSetting::current($owner)->update([
+        'require_auth_to_submit' => true,
+        'moderator_only_submissions' => true,
+    ]);
+
+    $this->get(route('ticker.submit', ['uuid' => $owner->ticker_uuid]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/submit')
+            ->where('requiresModerator', true)
+            ->where('isModeratorAuthenticated', false)
+            ->where('requiresTwitchAuth', false)
+            ->where('loginUrl', route('login')));
+});
+
+test('public users cannot submit when moderator only submissions are enabled', function () {
+    $owner = User::factory()->create();
+    TickerSetting::current($owner)->update(['moderator_only_submissions' => true]);
+
+    $this->post(route('ticker.submissions.store', ['uuid' => $owner->ticker_uuid]), [
+        'submitter_name' => 'Publik',
+        'content' => '2-1 i finalen',
+    ])->assertRedirect(route('login'));
+
+    expect(TickerMessage::query()->count())->toBe(0);
+});
+
+test('workspace moderators can submit when moderator only submissions are enabled', function () {
+    $owner = User::factory()->create(['role' => 'owner']);
+    $moderator = User::factory()->create([
+        'name' => 'Scorekeeper',
+        'role' => 'moderator',
+        'owner_id' => $owner->id,
+        'ticker_uuid' => null,
+    ]);
+    TickerSetting::current($owner)->update(['moderator_only_submissions' => true]);
+
+    $this->actingAs($moderator)
+        ->post(route('ticker.submissions.store', ['uuid' => $owner->ticker_uuid]), [
+            'content' => 'Team Blue leder 2-1',
+        ])
+        ->assertRedirect();
+
+    $message = TickerMessage::query()->firstOrFail();
+
+    expect($message->owner_id)->toBe($owner->id)
+        ->and($message->content)->toBe('Team Blue leder 2-1')
+        ->and($message->source_label)->toBe('Scorekeeper');
+});
+
 test('submitters can authenticate with twitch', function () {
     $owner = User::factory()->create();
 
@@ -248,7 +300,8 @@ test('ticker settings default to english', function () {
 
     expect($settings->headline)->toBe('Latest news')
         ->and($settings->rss_headline)->toBe('Latest news')
-        ->and($settings->user_headline)->toBe('Latest text');
+        ->and($settings->user_headline)->toBe('Latest text')
+        ->and($settings->moderator_only_submissions)->toBeFalse();
 });
 
 test('public ticker payload uses rss when the user queue is empty', function () {
@@ -381,6 +434,7 @@ test('ticker settings can be updated', function () {
             'crawl_duration_seconds' => 45,
             'message_display_seconds' => 15,
             'poll_interval_seconds' => 10,
+            'moderator_only_submissions' => '1',
             'show_rss' => '0',
         ])
         ->assertRedirect();
@@ -399,6 +453,7 @@ test('ticker settings can be updated', function () {
         ->and($settings->label_position)->toBe('right')
         ->and($settings->chroma_key_color)->toBe('blue')
         ->and($settings->image_url)->toBe('https://example.com/logo.png')
+        ->and($settings->moderator_only_submissions)->toBeTrue()
         ->and($settings->show_rss)->toBeFalse()
         ->and($settings->crawl_duration_seconds)->toBe(45)
         ->and($settings->message_display_seconds)->toBe(15);
