@@ -127,6 +127,13 @@ test('landing page can show the public themes link on the main site', function (
             ->where('features.themeLandingLinkEnabled', true));
 });
 
+test('public themes list is available on its own route', function () {
+    $this->get(route('themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes'));
+});
+
 test('authenticated users can manage ticker messages', function () {
     $user = User::factory()->create();
 

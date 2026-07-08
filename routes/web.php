@@ -22,6 +22,9 @@ Route::get('submit/twitch/callback', [SubmitterTwitchAuthController::class, 'cal
 Route::get('ticker-admin', TickerDashboardController::class)->name('ticker.dashboard');
 Route::get('ticker-admin/theme', [TickerDashboardController::class, 'theme'])->name('ticker.theme');
 
+Route::get('themes', [TickerThemeController::class, 'index'])->name('themes.index');
+Route::get('themes/{theme}', [TickerThemeController::class, 'show'])->name('themes.show');
+
 Route::get('ticker-admin/themes', [TickerThemeController::class, 'index'])->name('ticker.themes.index');
 Route::get('ticker-admin/themes/{theme}', [TickerThemeController::class, 'show'])->name('ticker.themes.show');
 Route::get('ticker-admin/themes/{theme}/share', [TickerThemeController::class, 'share'])->name('ticker.themes.share');

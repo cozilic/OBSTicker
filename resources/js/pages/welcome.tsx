@@ -2,7 +2,6 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import { Download, Github, LogIn, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { dashboard, login } from '@/routes';
-import themesRoutes from '@/routes/ticker/themes';
 
 const repositoryUrl = 'https://github.com/cozilic/OBSTicker';
 
@@ -24,17 +23,32 @@ export default function Welcome() {
                             className="h-9 w-auto"
                         />
                     </Link>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        asChild
-                        className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                    >
-                        <Link href={auth.user ? dashboard() : login()}>
-                            <LogIn />
-                            Admin login
-                        </Link>
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {features.themeLandingLinkEnabled ? (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                asChild
+                                className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                            >
+                                <Link href="/themes">
+                                    <FolderOpen />
+                                    Themes
+                                </Link>
+                            </Button>
+                        ) : null}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                        >
+                            <Link href={auth.user ? dashboard() : login()}>
+                                <LogIn />
+                                Admin login
+                            </Link>
+                        </Button>
+                    </div>
                 </header>
 
                 <section className="mx-auto grid w-full max-w-6xl items-center gap-10 px-5 py-14 md:min-h-[calc(100vh-88px)] md:grid-cols-[1fr_0.9fr]">
@@ -54,19 +68,6 @@ export default function Welcome() {
                             </p>
                         </div>
                         <div className="flex flex-wrap gap-3">
-                            {features.themeLandingLinkEnabled ? (
-                                <Button
-                                    size="lg"
-                                    variant="outline"
-                                    asChild
-                                    className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                                >
-                                    <Link href={themesRoutes.index.url()}>
-                                        <FolderOpen />
-                                        Themes
-                                    </Link>
-                                </Button>
-                            ) : null}
                             <Button
                                 size="lg"
                                 variant="outline"

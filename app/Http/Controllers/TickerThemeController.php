@@ -93,7 +93,9 @@ class TickerThemeController extends Controller
 
         return Inertia::render('ticker/theme-preview', [
             'theme' => $themeData,
-            'themesUrl' => route('ticker.themes.index'),
+            'themesUrl' => request()->routeIs('themes.*')
+                ? route('themes.index')
+                : route('ticker.themes.index'),
             'createThemeUrl' => route('ticker.theme'),
         ]);
     }
