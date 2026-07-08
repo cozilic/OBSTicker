@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Check, ExternalLink, FolderOpen, X } from 'lucide-react';
+import { Check, ExternalLink, FolderOpen, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -67,6 +67,20 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
         router.post(`/ticker-admin/theme-submissions/${submission.id}/reject`, {
             rejection_reason: reason ?? '',
         }, {
+            onSuccess: () => router.flushAll(),
+        });
+    };
+
+    const handleDelete = (submission: Submission) => {
+        const confirmed = window.confirm(
+            t('deleteThemeSubmissionConfirm'),
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        router.delete(`/ticker-admin/theme-submissions/${submission.id}`, {
             onSuccess: () => router.flushAll(),
         });
     };
@@ -191,10 +205,20 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
                                             variant="outline"
                                             disabled={submission.status !== 'pending'}
                                             onClick={() => handleReject(submission)}
-                                        >
+                                            >
                                             <X />
                                             {t('rejectSubmission')}
                                         </Button>
+                                        {submission.status === 'rejected' ? (
+                                            <Button
+                                                type="button"
+                                                variant="destructive"
+                                                onClick={() => handleDelete(submission)}
+                                            >
+                                                <Trash2 />
+                                                {t('deleteSubmission')}
+                                            </Button>
+                                        ) : null}
                                     </div>
 
                                     <div className="text-xs text-muted-foreground">

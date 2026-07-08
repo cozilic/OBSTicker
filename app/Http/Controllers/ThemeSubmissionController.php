@@ -238,6 +238,30 @@ class ThemeSubmissionController extends Controller
         return back();
     }
 
+    public function destroy(
+        ModerateThemeSubmissionRequest $request,
+        ThemeSubmission $themeSubmission,
+    ): RedirectResponse {
+        $this->assertOfficialCatalogHost();
+        $this->authorizeModeration();
+
+        if ($themeSubmission->status === 'approved') {
+            return back()->withErrors([
+                'submission' => 'Approved submissions cannot be deleted from the queue.',
+            ]);
+        }
+
+        Storage::disk('local')->delete($themeSubmission->archive_path);
+        $themeSubmission->delete();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Theme submission deleted.',
+        ]);
+
+        return back();
+    }
+
     private function authorizeModeration(): void
     {
         $user = Auth::user();

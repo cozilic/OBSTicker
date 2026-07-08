@@ -52,6 +52,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('ticker-admin/theme-submissions', [ThemeSubmissionController::class, 'index'])->name('ticker.theme-submissions.index');
         Route::post('ticker-admin/theme-submissions/{themeSubmission}/approve', [ThemeSubmissionController::class, 'approve'])->name('ticker.theme-submissions.approve');
         Route::post('ticker-admin/theme-submissions/{themeSubmission}/reject', [ThemeSubmissionController::class, 'reject'])->name('ticker.theme-submissions.reject');
+        Route::delete('ticker-admin/theme-submissions/{themeSubmission}', [ThemeSubmissionController::class, 'destroy'])->name('ticker.theme-submissions.destroy');
     }
 });
 

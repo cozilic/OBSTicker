@@ -238,6 +238,34 @@ test('theme approval reports unexpected import failures instead of crashing', fu
         ->assertSessionHasErrors('submission');
 });
 
+test('owners can delete rejected theme submissions', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'email' => config('ticker.owner_email'),
+    ]);
+
+    Storage::disk('local')->put('theme-submissions/rejected-theme.zip', 'not-a-real-zip');
+
+    $submission = ThemeSubmission::query()->create([
+        'theme_name' => 'Rejected Theme',
+        'theme_slug' => 'rejected-theme',
+        'author_name' => 'Alex Example',
+        'archive_path' => 'theme-submissions/rejected-theme.zip',
+        'source_type' => 'upload',
+        'status' => 'rejected',
+        'rejection_reason' => 'Not ready yet.',
+    ]);
+
+    $this->actingAs($owner)
+        ->delete(route('ticker.theme-submissions.destroy', ['themeSubmission' => $submission]))
+        ->assertRedirect();
+
+    expect(ThemeSubmission::query()->whereKey($submission->id)->exists())->toBeFalse()
+        ->and(Storage::disk('local')->exists('theme-submissions/rejected-theme.zip'))->toBeFalse();
+});
+
 test('self hosted installs do not expose theme submissions navigation', function () {
     $owner = User::factory()->create([
         'role' => 'owner',
