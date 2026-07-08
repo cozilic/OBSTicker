@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/lib/i18n';
 import type { Auth } from '@/types';
+import InputError from '@/components/input-error';
 
 type PageProps = {
     auth: Auth;
@@ -22,7 +23,7 @@ type PageProps = {
 
 export default function TickerTheme() {
     const { t } = useTranslation();
-    const { auth } = usePage<PageProps>().props;
+    const { auth, errors } = usePage<PageProps & { errors: Record<string, string> }>().props;
     const [themeName, setThemeName] = useState('');
     const [authorName, setAuthorName] = useState(auth.user?.name ?? '');
     const [leftImage, setLeftImage] = useState<File | null>(null);
@@ -49,6 +50,7 @@ export default function TickerTheme() {
         formData.set('right_image', rightImage);
 
         router.post('/ticker-admin/settings/stitch', formData, {
+            onSuccess: () => router.flushAll(),
             onFinish: () => setIsStitching(false),
         });
     };
@@ -125,6 +127,7 @@ export default function TickerTheme() {
                                     required
                                     className="mt-1"
                                 />
+                                <InputError className="mt-2" message={errors.theme_name} />
                             </div>
                             <div>
                                 <Label htmlFor="author_name">
@@ -142,6 +145,7 @@ export default function TickerTheme() {
                                     required
                                     className="mt-1"
                                 />
+                                <InputError className="mt-2" message={errors.author_name} />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -155,6 +159,7 @@ export default function TickerTheme() {
                                         defaultValue="0%"
                                         className="mt-1"
                                     />
+                                    <InputError className="mt-2" message={errors.custom_label_left} />
                                 </div>
                                 <div>
                                     <Label htmlFor="custom_label_width">
@@ -167,6 +172,7 @@ export default function TickerTheme() {
                                         placeholder="13.25%"
                                         className="mt-1"
                                     />
+                                    <InputError className="mt-2" message={errors.custom_label_width} />
                                 </div>
                                 <div>
                                     <Label htmlFor="custom_viewport_left">
@@ -179,6 +185,7 @@ export default function TickerTheme() {
                                         placeholder="23%"
                                         className="mt-1"
                                     />
+                                    <InputError className="mt-2" message={errors.custom_viewport_left} />
                                 </div>
                                 <div>
                                     <Label htmlFor="custom_viewport_right">
@@ -191,6 +198,7 @@ export default function TickerTheme() {
                                         placeholder="9.5%"
                                         className="mt-1"
                                     />
+                                    <InputError className="mt-2" message={errors.custom_viewport_right} />
                                 </div>
                             </div>
                             <div>
@@ -206,7 +214,8 @@ export default function TickerTheme() {
                                     }
                                     required
                                     className="mt-1"
-                                />
+                                    />
+                                <InputError className="mt-2" message={errors.title_image ?? errors.left_image} />
                             </div>
                             <div>
                                 <Label htmlFor="content_image">
@@ -223,7 +232,8 @@ export default function TickerTheme() {
                                     }
                                     required
                                     className="mt-1"
-                                />
+                                    />
+                                <InputError className="mt-2" message={errors.content_image ?? errors.middle_image} />
                             </div>
                             <div>
                                 <Label htmlFor="end_image">
@@ -238,8 +248,10 @@ export default function TickerTheme() {
                                     }
                                     required
                                     className="mt-1"
-                                />
+                                    />
+                                <InputError className="mt-2" message={errors.end_image ?? errors.right_image} />
                             </div>
+                            <InputError message={errors.stitch} />
                             <Button
                                 type="submit"
                                 disabled={
