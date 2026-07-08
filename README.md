@@ -115,6 +115,28 @@ touch database/database.sqlite
 
 For MySQL, MariaDB, or PostgreSQL, set the normal `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` values instead.
 
+### Theme catalog
+
+OBSTicker can show an official shared theme catalog on the main site and optionally link self-hosted installs back to it.
+
+Use these environment variables:
+
+```dotenv
+TICKER_THEME_OFFICIAL_CATALOG_ENABLED=true
+TICKER_THEME_OFFICIAL_CATALOG_URL=https://ticker.norrnet.online/themes
+TICKER_THEME_LANDING_LINK=true
+```
+
+- `TICKER_THEME_OFFICIAL_CATALOG_ENABLED` enables the shared official themes catalog routes on the main site.
+- `TICKER_THEME_OFFICIAL_CATALOG_URL` points self-hosted installs to the official catalog and submission endpoint.
+- `TICKER_THEME_LANDING_LINK` shows the official themes link on the main landing page when the official catalog is enabled.
+
+Recommended setup:
+
+- On `ticker.norrnet.online`, set `TICKER_THEME_OFFICIAL_CATALOG_ENABLED=true` and `TICKER_THEME_LANDING_LINK=true`.
+- On self-hosted installs, set `TICKER_THEME_OFFICIAL_CATALOG_URL` to the official catalog URL, but keep `TICKER_THEME_OFFICIAL_CATALOG_ENABLED=false` so the official catalog itself is not exposed locally.
+- After changing any of these values, run `php artisan config:clear` and rebuild the frontend if needed.
+
 ### 4. Run migrations and cache production config
 
 ```bash
