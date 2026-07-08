@@ -1028,3 +1028,28 @@ test('user can stitch custom images into a theme directory', function () {
         ->assertJsonPath('settings.custom_viewport_left', '24%')
         ->assertJsonPath('settings.custom_viewport_right', '10%');
 });
+
+test('stitch failures return a validation error instead of a 500', function () {
+    $user = User::factory()->create();
+
+    $dummyPng = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABF2M8XwAAAABJRU5ErkJggg==', true);
+
+    $titleFile = UploadedFile::fake()->createWithContent('title.png', $dummyPng);
+    $contentFile = UploadedFile::fake()->createWithContent('content.png', $dummyPng);
+    $endFile = UploadedFile::fake()->createWithContent('end.png', $dummyPng);
+
+    $this->mock(TickerStyleRepository::class, function ($mock): void {
+        $mock->shouldReceive('all')->andThrow(new RuntimeException('boom'));
+    });
+
+    $this->actingAs($user)
+        ->post(route('ticker.settings.stitch'), [
+            'theme_name' => 'Dusk',
+            'author_name' => 'Patrik Forsberg',
+            'title_image' => $titleFile,
+            'content_image' => $contentFile,
+            'end_image' => $endFile,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('stitch');
+});
