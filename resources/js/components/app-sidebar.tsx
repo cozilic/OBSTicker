@@ -70,9 +70,10 @@ const translateNavItems = (
 
 export function AppSidebar() {
     const { t } = useTranslation();
-    const { features, canModerateThemes } = usePage<{
+    const { features, canModerateThemes, isOfficialCatalogHost } = usePage<{
         features: { themeCatalogEnabled: boolean };
         canModerateThemes: boolean;
+        isOfficialCatalogHost: boolean;
     }>().props;
     const translatedPlatformNavItems = translateNavItems(platformNavItems, t);
     const translatedTickerNavItems = translateNavItems(
@@ -81,9 +82,13 @@ export function AppSidebar() {
         ),
         t,
     );
-    const filteredTickerNavItems = canModerateThemes
-        ? translatedTickerNavItems
-        : translatedTickerNavItems.filter((item) => item.title !== t('themeSubmissions'));
+    const filteredTickerNavItems = translatedTickerNavItems.filter((item) => {
+        if (item.title === t('themeSubmissions')) {
+            return canModerateThemes && isOfficialCatalogHost;
+        }
+
+        return true;
+    });
 
     return (
         <Sidebar collapsible="icon" variant="inset">

@@ -175,7 +175,10 @@ test('visitors can submit a theme for moderation', function () {
 test('owners can review theme submissions', function () {
     config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
 
-    $owner = User::factory()->create(['role' => 'owner']);
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'email' => config('ticker.owner_email'),
+    ]);
     $zipPath = createThemeZipFixture('aurora', 'Alex Example');
 
     $this->post(route('themes.submissions.store'), [
@@ -204,6 +207,33 @@ test('owners can review theme submissions', function () {
         ->and(File::exists(public_path('ticker-styles/aurora/title.png')))->toBeTrue()
         ->and(File::exists(public_path('ticker-styles/aurora/aurora.json')))->toBeTrue()
         ->and(Storage::disk('local')->exists($submission->archive_path))->toBeFalse();
+});
+
+test('self hosted installs do not expose theme submissions navigation', function () {
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'email' => 'someone-else@example.com',
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('isOfficialCatalogHost', false)
+            ->where('canModerateThemes', false));
+});
+
+test('only the platform owner email can moderate theme submissions', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $nonOwner = User::factory()->create([
+        'role' => 'owner',
+        'email' => 'someone-else@example.com',
+    ]);
+
+    $this->actingAs($nonOwner)
+        ->get(route('ticker.theme-submissions.index'))
+        ->assertForbidden();
 });
 
 test('authenticated users can manage ticker messages', function () {

@@ -53,6 +53,11 @@ class User extends Authenticatable
         return $this->role === 'owner';
     }
 
+    public function isPlatformOwner(): bool
+    {
+        return strtolower($this->email) === strtolower((string) config('ticker.owner_email', 'aggen81@gmail.com'));
+    }
+
     public function ownerAccountId(): int
     {
         return $this->isOwner() || $this->owner_id === null ? $this->id : (int) $this->owner_id;

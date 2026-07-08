@@ -13,7 +13,7 @@ class ModerateThemeSubmissionRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user() instanceof User && $this->user()->isOwner();
+        return $this->user() instanceof User && $this->user()->isPlatformOwner();
     }
 
     /**

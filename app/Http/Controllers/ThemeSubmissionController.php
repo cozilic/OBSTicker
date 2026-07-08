@@ -239,7 +239,7 @@ class ThemeSubmissionController extends Controller
     private function authorizeModeration(): void
     {
         $user = Auth::user();
-        abort_unless($user instanceof User && $user->isOwner(), 403);
+        abort_unless($user instanceof User && $user->isPlatformOwner(), 403);
     }
 
     private function assertOfficialCatalogHost(): void

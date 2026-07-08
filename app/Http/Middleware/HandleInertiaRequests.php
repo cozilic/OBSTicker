@@ -54,7 +54,7 @@ class HandleInertiaRequests extends Middleware
             'themeCatalogUrl' => $officialCatalogUrl,
             'isOfficialCatalogHost' => $officialCatalogHost !== null
                 && $request->getHost() === $officialCatalogHost,
-            'canModerateThemes' => $request->user() instanceof User && $request->user()->isOwner(),
+            'canModerateThemes' => $request->user() instanceof User && $request->user()->isPlatformOwner(),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }
