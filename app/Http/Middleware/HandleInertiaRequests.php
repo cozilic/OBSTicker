@@ -51,11 +51,14 @@ class HandleInertiaRequests extends Middleware
                 'themeOfficialCatalogEnabled' => $officialCatalogEnabled,
                 'themeLandingLinkEnabled' => $officialCatalogEnabled
                     && config('ticker.themes.landing_link_enabled', false),
-                'themeOfficialCatalogLinkEnabled' => $officialCatalogEnabled
-                    && $officialCatalogHost !== null
+                'themeOfficialCatalogLinkEnabled' => $officialCatalogHost !== null
+                    && $request->getHost() !== $officialCatalogHost,
+                'themeOfficialCatalogSubmissionEnabled' => $officialCatalogHost !== null
                     && $request->getHost() !== $officialCatalogHost,
             ],
-            'themeCatalogUrl' => $officialCatalogEnabled ? $officialCatalogUrl : null,
+            'themeCatalogUrl' => $officialCatalogHost !== null && $request->getHost() !== $officialCatalogHost
+                ? $officialCatalogUrl
+                : null,
             'isOfficialCatalogHost' => $officialCatalogHost !== null
                 && $request->getHost() === $officialCatalogHost,
             'canModerateThemes' => $request->user() instanceof User && $request->user()->isPlatformOwner(),

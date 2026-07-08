@@ -97,7 +97,10 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const { t } = useTranslation();
     const { auth, errors, features, themeCatalogUrl } = usePage<{
         auth: { user: { id: number } | null };
-        features: { themeOfficialCatalogLinkEnabled: boolean };
+        features: {
+            themeOfficialCatalogLinkEnabled: boolean;
+            themeOfficialCatalogSubmissionEnabled: boolean;
+        };
         themeCatalogUrl: string | null;
         errors: Record<string, string>;
     }>().props;
@@ -239,24 +242,6 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
             <Head title={t('themes')} />
             <div className="flex flex-1 flex-col gap-4 p-4 lg:grid lg:grid-cols-[minmax(0,1.45fr)_300px]">
                 <aside className="space-y-4">
-                    {features.themeOfficialCatalogLinkEnabled ? (
-                        <Card className="rounded-lg border-cyan-300/20 bg-cyan-300/5">
-                            <CardHeader>
-                                <CardTitle>{t('officialThemesCatalog')}</CardTitle>
-                                <CardDescription>
-                                    {t('officialThemesCatalogDescription')}
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <Button asChild variant="outline" className="w-full justify-start">
-                                    <a href={themeCatalogUrl ?? '#'} target="_blank" rel="noreferrer">
-                                        {t('openOfficialThemesCatalog')}
-                                    </a>
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    ) : null}
-
                     <Card className="h-fit rounded-lg">
                         <CardHeader>
                             <CardTitle>{t('themes')}</CardTitle>
@@ -355,62 +340,73 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                         ) : null}
                                                     </div>
                                                 </div>
-                                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        {theme.author ? (
-                                                            <Badge variant="secondary">
-                                                                {t('createdBy')}: {theme.author}
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge variant="outline">
-                                                                {t('createdBy')}: -
-                                                            </Badge>
-                                                        )}
-                                                        {theme.submissionStatus ? (
-                                                            <Badge
-                                                                variant={
+                                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                    <span className="text-sm text-muted-foreground">
+                                                        {t('createdBy')}:
+                                                    </span>
+                                                    {theme.author ? (
+                                                        <span className="text-sm font-medium text-foreground">
+                                                            {theme.author}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-sm text-muted-foreground">-</span>
+                                                    )}
+                                                    {theme.submissionStatus ? (
+                                                        <Badge
+                                                            variant={
+                                                                theme.submissionStatus === 'approved'
+                                                                    ? 'secondary'
+                                                                    : theme.submissionStatus === 'pending'
+                                                                        ? 'outline'
+                                                                        : 'destructive'
+                                                            }
+                                                            title={
+                                                                theme.submissionStatus === 'rejected'
+                                                                    ? theme.submissionRejectionReason ?? undefined
+                                                                    : undefined
+                                                            }
+                                                            className={
+                                                                [
+                                                                    'rounded-full px-3 py-1',
+                                                                    theme.submissionStatus === 'pending'
+                                                                        ? 'border-border bg-muted text-muted-foreground'
+                                                                        : '',
                                                                     theme.submissionStatus === 'approved'
-                                                                        ? 'secondary'
-                                                                        : theme.submissionStatus === 'pending'
-                                                                            ? 'outline'
-                                                                            : 'destructive'
-                                                                }
-                                                                title={
+                                                                        ? 'border-transparent bg-emerald-500/15 text-emerald-500'
+                                                                        : '',
                                                                     theme.submissionStatus === 'rejected'
-                                                                        ? theme.submissionRejectionReason ?? ''
-                                                                        : ''
-                                                                }
-                                                                className={theme.submissionStatus === 'rejected' && theme.submissionRejectionReason ? 'cursor-help' : undefined}
-                                                            >
-                                                                {t(
+                                                                        ? 'cursor-help'
+                                                                        : '',
+                                                                ].join(' ')
+                                                            }
+                                                        >
+                                                            {theme.submissionStatus === 'pending'
+                                                                ? `${t('pending')}...`
+                                                                : t(
                                                                     theme.submissionStatus === 'rejected'
                                                                         ? 'denied'
-                                                                        : theme.submissionStatus,
+                                                                        : 'approved',
                                                                 )}
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge variant="outline">
-                                                                {t('none')}
-                                                            </Badge>
-                                                        )}
-                                                        {importingThemeSlug === theme.slug ? (
-                                                            <Badge variant="outline">
-                                                                {t('importThemeNow')}...
-                                                            </Badge>
-                                                        ) : null}
-                                                    </div>
-                                                    {canManageThemes && features.themeOfficialCatalogEnabled && theme.submissionStatus !== 'pending' && theme.submissionStatus !== 'approved' ? (
+                                                        </Badge>
+                                                    ) : canManageThemes && features.themeOfficialCatalogSubmissionEnabled ? (
                                                         <Button
                                                             type="button"
                                                             variant="secondary"
                                                             size="sm"
                                                             onClick={() => handleSubmitToOfficialThemes(theme)}
                                                             disabled={submittingThemeSlug === theme.slug}
-                                                            className="shrink-0"
+                                                            className="shrink-0 rounded-full"
                                                         >
                                                             <Upload />
-                                                            {submittingThemeSlug === theme.slug ? `${t('submitToOfficialThemes')}...` : t('submitToOfficialThemes')}
+                                                            {submittingThemeSlug === theme.slug
+                                                                ? `${t('submitToOfficialThemes')}...`
+                                                                : t('submitToOfficialThemes')}
                                                         </Button>
+                                                    ) : null}
+                                                    {importingThemeSlug === theme.slug ? (
+                                                        <Badge variant="outline">
+                                                            {t('importThemeNow')}...
+                                                        </Badge>
                                                     ) : null}
                                                 </div>
                                             </div>
@@ -470,89 +466,109 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                 </aside>
 
                 <div className="space-y-4">
-                        {canManageThemes ? (
+                    {features.themeOfficialCatalogLinkEnabled ? (
+                        <Card className="rounded-lg border-cyan-300/20 bg-cyan-300/5">
+                            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                                <div className="space-y-1">
+                                    <p className="text-sm font-medium">
+                                        {t('officialThemesCatalog')}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        {t('officialThemesCatalogDescription')}
+                                    </p>
+                                </div>
+                                <Button asChild variant="outline">
+                                    <a href={themeCatalogUrl ?? '#'} target="_blank" rel="noreferrer">
+                                        {t('openOfficialThemesCatalog')}
+                                    </a>
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    ) : null}
+
+                    {canManageThemes ? (
                         <Card className="rounded-lg">
                             <CardHeader>
                                 <CardTitle>{t('importTheme')}</CardTitle>
                                 <CardDescription>
                                     {t('themeImportDescription')}
                                 </CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-6">
-                                    <form onSubmit={handleUrlImport} className="space-y-4">
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                                <form onSubmit={handleUrlImport} className="space-y-4">
+                                    <div>
+                                        <Label htmlFor="theme_url">
+                                            {t('themeImportUrl')}
+                                        </Label>
+                                        <Input
+                                            id="theme_url"
+                                            name="theme_url"
+                                            type="url"
+                                            value={themeImportUrl}
+                                            onChange={(event) =>
+                                                setThemeImportUrl(event.target.value)
+                                            }
+                                            placeholder="https://example.com/scoreboard.zip"
+                                            className="mt-1"
+                                        />
+                                        <InputError
+                                            className="mt-2"
+                                            message={errors.theme_url}
+                                        />
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        disabled={isImportingUrl || themeImportUrl.trim() === ''}
+                                    >
+                                        <Link2 />
+                                        {t('importThemeFromUrl')}
+                                    </Button>
+                                </form>
+
+                                <div className="border-t pt-4">
+                                    <form onSubmit={handleUpload} className="space-y-4">
                                         <div>
-                                            <Label htmlFor="theme_url">
-                                                {t('themeImportUrl')}
+                                            <Label htmlFor="theme_zip">
+                                                {t('themeZip')}
                                             </Label>
                                             <Input
-                                                id="theme_url"
-                                                name="theme_url"
-                                                type="url"
-                                                value={themeImportUrl}
+                                                id="theme_zip"
+                                                name="theme_zip"
+                                                type="file"
+                                                accept=".zip,application/zip"
                                                 onChange={(event) =>
-                                                    setThemeImportUrl(event.target.value)
+                                                    setThemeZip(
+                                                        event.target.files?.[0] ??
+                                                            null,
+                                                    )
                                                 }
-                                                placeholder="https://example.com/scoreboard.zip"
                                                 className="mt-1"
                                             />
                                             <InputError
                                                 className="mt-2"
-                                                message={errors.theme_url}
+                                                message={errors.theme_zip}
                                             />
                                         </div>
-                                        <Button
-                                            type="submit"
-                                            variant="outline"
-                                            disabled={isImportingUrl || themeImportUrl.trim() === ''}
-                                        >
-                                            <Link2 />
-                                            {t('importThemeFromUrl')}
-                                        </Button>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <Button
+                                                type="submit"
+                                                disabled={isUploading || !themeZip}
+                                            >
+                                                <Upload />
+                                                {t('uploadThemeZip')}
+                                            </Button>
+                                            {themeZip ? (
+                                                <span className="text-sm text-muted-foreground">
+                                                    {themeZip.name}
+                                                </span>
+                                            ) : null}
+                                        </div>
                                     </form>
-
-                                    <div className="border-t pt-4">
-                                        <form onSubmit={handleUpload} className="space-y-4">
-                                            <div>
-                                                <Label htmlFor="theme_zip">
-                                                    {t('themeZip')}
-                                                </Label>
-                                                <Input
-                                                    id="theme_zip"
-                                                    name="theme_zip"
-                                                    type="file"
-                                                    accept=".zip,application/zip"
-                                                    onChange={(event) =>
-                                                        setThemeZip(
-                                                            event.target.files?.[0] ??
-                                                                null,
-                                                        )
-                                                    }
-                                                    className="mt-1"
-                                                />
-                                                <InputError
-                                                    className="mt-2"
-                                                    message={errors.theme_zip}
-                                                />
-                                            </div>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <Button
-                                                    type="submit"
-                                                    disabled={isUploading || !themeZip}
-                                                >
-                                                    <Upload />
-                                                    {t('uploadThemeZip')}
-                                                </Button>
-                                                {themeZip ? (
-                                                    <span className="text-sm text-muted-foreground">
-                                                        {themeZip.name}
-                                                    </span>
-                                                ) : null}
-                                            </div>
-                                        </form>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ) : null}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ) : null}
 
                     {canManageThemes ? (
                         <Card className="rounded-lg">

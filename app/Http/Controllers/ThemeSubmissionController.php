@@ -7,6 +7,7 @@ use App\Http\Requests\StoreThemeSubmissionRequest;
 use App\Models\ThemeSubmission;
 use App\Models\User;
 use App\Services\TickerStyleRepository;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
@@ -88,8 +89,6 @@ class ThemeSubmissionController extends Controller
 
     public function storeFromTheme(string $theme, TickerStyleRepository $tickerStyles): RedirectResponse
     {
-        $this->assertOfficialCatalogHost();
-
         $slug = Str::slug($theme);
         if ($slug === '' || ! $tickerStyles->existsTheme($slug)) {
             return back()->withErrors([
@@ -120,11 +119,26 @@ class ThemeSubmissionController extends Controller
             ]);
         }
 
+        $submissionResult = $this->isOfficialCatalogHost();
+        $storedArchivePath = null;
+
         try {
             $archivePath = $tickerStyles->createThemeZip($slug);
             $storedArchivePath = $this->storeThemeArchive($archivePath, $slug);
+
+            if (! $submissionResult) {
+                $submissionResult = $this->submitArchiveToOfficialCatalog(
+                    $archivePath,
+                    $themeData['label'],
+                    $themeData['author'] ?? (Auth::user()?->name ?? 'Unknown'),
+                );
+            }
         } catch (\Throwable $exception) {
             report($exception);
+
+            if (is_string($storedArchivePath)) {
+                Storage::disk('local')->delete($storedArchivePath);
+            }
 
             return back()->withErrors([
                 'submission' => 'The theme could not be submitted.',
@@ -133,6 +147,16 @@ class ThemeSubmissionController extends Controller
             if (isset($archivePath) && is_file($archivePath)) {
                 File::delete($archivePath);
             }
+        }
+
+        if ($submissionResult === false) {
+            if (is_string($storedArchivePath)) {
+                Storage::disk('local')->delete($storedArchivePath);
+            }
+
+            return back()->withErrors([
+                'submission' => 'The theme could not be submitted to the official catalog.',
+            ]);
         }
 
         ThemeSubmission::query()->updateOrCreate(
@@ -165,6 +189,29 @@ class ThemeSubmissionController extends Controller
         ]);
 
         return back();
+    }
+
+    public function status(string $theme): JsonResponse
+    {
+        $this->assertOfficialCatalogHost();
+
+        $slug = Str::slug($theme);
+        if ($slug === '') {
+            abort(404);
+        }
+
+        $submission = ThemeSubmission::query()->where('theme_slug', $slug)->latest()->first();
+        if ($submission === null) {
+            return response()->json([
+                'status' => null,
+                'rejection_reason' => null,
+            ]);
+        }
+
+        return response()->json([
+            'status' => $submission->status,
+            'rejection_reason' => $submission->rejection_reason,
+        ]);
     }
 
     public function submitted(): Response
@@ -356,14 +403,19 @@ class ThemeSubmissionController extends Controller
 
     private function assertOfficialCatalogHost(): void
     {
+        if (! $this->isOfficialCatalogHost()) {
+            abort(404);
+        }
+    }
+
+    private function isOfficialCatalogHost(): bool
+    {
         $officialCatalogHost = parse_url(
             config('ticker.themes.official_catalog_url', 'https://ticker.norrnet.online/themes'),
             PHP_URL_HOST,
         );
 
-        if ($officialCatalogHost === null || request()->getHost() !== $officialCatalogHost) {
-            abort(404);
-        }
+        return $officialCatalogHost !== null && request()->getHost() === $officialCatalogHost;
     }
 
     private function storeArchive(StoreThemeSubmissionRequest $request, string $themeSlug): string
@@ -406,5 +458,25 @@ class ThemeSubmissionController extends Controller
         Storage::disk('local')->put($storedPath, File::get($archivePath));
 
         return $storedPath;
+    }
+
+    private function submitArchiveToOfficialCatalog(string $archivePath, string $themeName, string $authorName): bool
+    {
+        $officialCatalogUrl = rtrim(
+            config('ticker.themes.official_catalog_url', 'https://ticker.norrnet.online/themes'),
+            '/',
+        );
+        $submissionUrl = $officialCatalogUrl.'/submissions';
+
+        $response = Http::timeout(30)
+            ->attach('theme_zip', File::get($archivePath), basename($archivePath))
+            ->post($submissionUrl, [
+                'theme_name' => $themeName,
+                'author_name' => $authorName,
+                'submitter_name' => Auth::user()?->name ?? '',
+                'submitter_email' => Auth::user()?->email ?? '',
+            ]);
+
+        return $response->successful() || $response->status() >= 300 && $response->status() < 400;
     }
 }

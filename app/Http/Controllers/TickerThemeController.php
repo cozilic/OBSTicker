@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -234,15 +235,19 @@ class TickerThemeController extends Controller
             ->whereIn('theme_slug', collect($themes['data'])->pluck('slug')->all())
             ->get()
             ->keyBy('theme_slug');
+        $officialSubmissionStates = $this->fetchOfficialSubmissionStates(
+            collect($themes['data'])->pluck('slug')->all(),
+        );
 
         $themes['data'] = array_map(
-            static function (array $theme) use ($submissions): array {
+            static function (array $theme) use ($submissions, $officialSubmissionStates): array {
                 $submission = $submissions->get($theme['slug']);
+                $officialSubmission = $officialSubmissionStates[$theme['slug']] ?? null;
 
                 return [
                     ...$theme,
-                    'submissionStatus' => $submission?->status,
-                    'submissionRejectionReason' => $submission?->rejection_reason,
+                    'submissionStatus' => $officialSubmission['status'] ?? $submission?->status,
+                    'submissionRejectionReason' => $officialSubmission['rejection_reason'] ?? $submission?->rejection_reason,
                 ];
             },
             $themes['data'],
@@ -287,6 +292,50 @@ class TickerThemeController extends Controller
             ->where('theme_slug', $slug)
             ->where('status', 'approved')
             ->exists();
+    }
+
+    /**
+     * @param  list<string>  $slugs
+     * @return array<string, array{status: string|null, rejection_reason: string|null}>
+     */
+    private function fetchOfficialSubmissionStates(array $slugs): array
+    {
+        if ($slugs === [] || $this->isOfficialCatalogHost()) {
+            return [];
+        }
+
+        $officialCatalogUrl = rtrim(
+            config('ticker.themes.official_catalog_url', 'https://ticker.norrnet.online/themes'),
+            '/',
+        );
+
+        $states = [];
+
+        foreach (array_values(array_unique($slugs)) as $slug) {
+            try {
+                $response = Http::acceptJson()
+                    ->timeout(10)
+                    ->get($officialCatalogUrl.'/submissions/'.rawurlencode($slug).'/status');
+
+                if (! $response->successful()) {
+                    continue;
+                }
+
+                $payload = $response->json();
+                if (! is_array($payload)) {
+                    continue;
+                }
+
+                $states[$slug] = [
+                    'status' => is_string($payload['status'] ?? null) ? $payload['status'] : null,
+                    'rejection_reason' => is_string($payload['rejection_reason'] ?? null) ? $payload['rejection_reason'] : null,
+                ];
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $states;
     }
 
     /**
@@ -366,5 +415,15 @@ class TickerThemeController extends Controller
                 'prev_page_url' => $paginator->previousPageUrl(),
             ],
         ];
+    }
+
+    private function isOfficialCatalogHost(): bool
+    {
+        $officialCatalogHost = parse_url(
+            config('ticker.themes.official_catalog_url', 'https://ticker.norrnet.online/themes'),
+            PHP_URL_HOST,
+        );
+
+        return $officialCatalogHost !== null && request()->getHost() === $officialCatalogHost;
     }
 }

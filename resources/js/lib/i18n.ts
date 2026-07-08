@@ -29,7 +29,7 @@ const messages = {
         officialThemesCatalog: 'Official themes catalog',
         officialThemesCatalogDescription:
             'Browse the shared catalog and download official themes.',
-        openOfficialThemesCatalog: 'Open official catalog',
+        openOfficialThemesCatalog: 'Browse official themes',
         submitTheme: 'Submit theme',
         submitToOfficialThemes: 'Submit to Official themes',
         submitThemeDescription:
@@ -165,7 +165,7 @@ const messages = {
         officialThemesCatalog: 'Officiell temasamling',
         officialThemesCatalogDescription:
             'Bläddra i den delade samlingen och ladda ner officiella teman.',
-        openOfficialThemesCatalog: 'Öppna officiell katalog',
+        openOfficialThemesCatalog: 'Bläddra i officiella teman',
         submitTheme: 'Skicka in tema',
         submitToOfficialThemes: 'Skicka till officiella teman',
         submitThemeDescription:

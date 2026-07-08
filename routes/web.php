@@ -27,6 +27,7 @@ if (config('ticker.themes.official_catalog_enabled', false)) {
     Route::get('themes', [TickerThemeController::class, 'index'])->name('themes.index');
     Route::get('themes/submit', [ThemeSubmissionController::class, 'create'])->name('themes.submit');
     Route::post('themes/submissions', [ThemeSubmissionController::class, 'store'])->name('themes.submissions.store');
+    Route::get('themes/submissions/{theme}/status', [ThemeSubmissionController::class, 'status'])->name('themes.submissions.status');
     Route::get('themes/submitted', [ThemeSubmissionController::class, 'submitted'])->name('themes.submitted');
     Route::get('themes/{theme}', [TickerThemeController::class, 'show'])->name('themes.show');
 }
@@ -41,10 +42,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::post('ticker-admin/themes', [TickerThemeController::class, 'store'])->name('ticker.themes.store');
     Route::delete('ticker-admin/themes/{theme}', [TickerThemeController::class, 'destroy'])->name('ticker.themes.destroy');
-
-    if (config('ticker.themes.official_catalog_enabled', false)) {
-        Route::post('ticker-admin/themes/{theme}/submit', [ThemeSubmissionController::class, 'storeFromTheme'])->name('ticker.themes.submit');
-    }
+    Route::post('ticker-admin/themes/{theme}/submit', [ThemeSubmissionController::class, 'storeFromTheme'])->name('ticker.themes.submit');
 
     Route::put('ticker-admin/settings', [TickerDashboardController::class, 'update'])->name('ticker.settings.update');
     Route::post('ticker-admin/settings/stitch', [TickerDashboardController::class, 'stitch'])->name('ticker.settings.stitch');

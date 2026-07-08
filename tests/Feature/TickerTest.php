@@ -214,6 +214,33 @@ test('visitors can submit a theme for moderation', function () {
     expect(Storage::disk('local')->exists($submission->archive_path))->toBeTrue();
 });
 
+test('self hosted themes can be submitted to the official catalog', function () {
+    config(['ticker.themes.official_catalog_url' => 'https://ticker.norrnet.online/themes']);
+
+    Http::fake([
+        'https://ticker.norrnet.online/themes/submissions' => Http::response([], 302),
+    ]);
+
+    createTickerThemeFixture('dusk');
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('ticker.themes.submit', ['theme' => 'dusk']))
+        ->assertRedirect();
+
+    Http::assertSent(function ($request): bool {
+        return $request->url() === 'https://ticker.norrnet.online/themes/submissions'
+            && $request->method() === 'POST';
+    });
+
+    $submission = ThemeSubmission::query()->firstOrFail();
+
+    expect($submission->theme_slug)->toBe('dusk')
+        ->and($submission->status)->toBe('pending')
+        ->and($submission->submitter_email)->toBe($user->email)
+        ->and(Storage::disk('local')->exists($submission->archive_path))->toBeTrue();
+});
+
 test('owners can review theme submissions', function () {
     config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
 
@@ -318,6 +345,30 @@ test('self hosted installs do not expose theme submissions navigation', function
         ->assertInertia(fn (Assert $page) => $page
             ->where('isOfficialCatalogHost', false)
             ->where('canModerateThemes', false));
+});
+
+test('themes list syncs submission status from the official catalog', function () {
+    createTickerThemeFixture('dusk');
+    config(['ticker.themes.official_catalog_url' => 'https://ticker.norrnet.online/themes']);
+
+    Http::fake([
+        'https://ticker.norrnet.online/themes/submissions/dusk/status' => Http::response([
+            'status' => 'approved',
+            'rejection_reason' => null,
+        ]),
+    ]);
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('features.themeOfficialCatalogLinkEnabled', true)
+            ->where('features.themeOfficialCatalogSubmissionEnabled', true)
+            ->where('themeCatalogUrl', 'https://ticker.norrnet.online/themes')
+            ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'dusk' && $theme['submissionStatus'] === 'approved')));
 });
 
 test('only the platform owner email can moderate theme submissions', function () {

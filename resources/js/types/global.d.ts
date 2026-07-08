@@ -15,6 +15,7 @@ declare module '@inertiajs/core' {
             sidebarOpen: boolean;
             canModerateThemes: boolean;
             themeOfficialCatalogEnabled: boolean;
+            themeOfficialCatalogSubmissionEnabled: boolean;
             themeCatalogUrl: string | null;
             isOfficialCatalogHost: boolean;
             [key: string]: unknown;
