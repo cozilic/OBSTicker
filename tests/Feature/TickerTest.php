@@ -384,11 +384,20 @@ test('guests can browse the public themes catalog', function () {
     File::deleteDirectory(public_path('ticker-styles'));
 
     createTickerThemeFixture('dusk');
+    ThemeSubmission::query()->create([
+        'theme_name' => 'Dusk',
+        'theme_slug' => 'dusk',
+        'author_name' => 'Fixture Author',
+        'source_type' => 'upload',
+        'archive_path' => 'theme-submissions/dusk.zip',
+        'status' => 'approved',
+        'published_theme_slug' => 'dusk',
+    ]);
 
-    $this->get(route('ticker.themes.index'))
+    $this->get(route('themes.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->component('ticker/themes')
+            ->component('themes/index')
             ->where('themes.meta.current_page', 1)
             ->where('themes.meta.per_page', 10)
             ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'dusk')));
@@ -396,11 +405,20 @@ test('guests can browse the public themes catalog', function () {
 
 test('guests can preview public themes', function () {
     createTickerThemeFixture('dusk');
+    ThemeSubmission::query()->create([
+        'theme_name' => 'Dusk',
+        'theme_slug' => 'dusk',
+        'author_name' => 'Fixture Author',
+        'source_type' => 'upload',
+        'archive_path' => 'theme-submissions/dusk.zip',
+        'status' => 'approved',
+        'published_theme_slug' => 'dusk',
+    ]);
 
-    $this->get(route('ticker.themes.show', ['theme' => 'dusk']))
+    $this->get(route('themes.show', ['theme' => 'dusk']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->component('ticker/theme-preview')
+            ->component('themes/theme-preview')
             ->where('theme.slug', 'dusk'));
 });
 

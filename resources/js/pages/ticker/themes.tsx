@@ -237,7 +237,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
     return (
         <>
             <Head title={t('themes')} />
-            <div className="flex flex-1 flex-col gap-4 p-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)]">
+            <div className="flex flex-1 flex-col gap-4 p-4 lg:grid lg:grid-cols-[minmax(0,1.45fr)_300px]">
                 <aside className="space-y-4">
                     {features.themeOfficialCatalogLinkEnabled ? (
                         <Card className="rounded-lg border-cyan-300/20 bg-cyan-300/5">
@@ -276,7 +276,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                         {themes.data.map((theme) => (
                                             <div
                                                 key={theme.slug}
-                                                className="rounded-md border p-3"
+                                                className="rounded-lg border p-3"
                                             >
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
@@ -288,8 +288,8 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                         </Link>
                                                         <p className="truncate text-xs text-muted-foreground">
                                                             {theme.slug}
-                                                        </p>
-                                                    </div>
+                                                            </p>
+                                                        </div>
                                                     <div className="flex shrink-0 items-center gap-2">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
@@ -355,51 +355,58 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                         ) : null}
                                                     </div>
                                                 </div>
-                                                <div className="mt-3 flex flex-wrap items-center gap-2">
-                                                    {theme.author ? (
-                                                        <Badge variant="secondary">
-                                                            {t('createdBy')}: {theme.author}
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="outline">
-                                                            {t('createdBy')}: -
-                                                        </Badge>
-                                                    )}
-                                                    {theme.submissionStatus ? (
-                                                        <Badge
-                                                            variant={
-                                                                theme.submissionStatus === 'approved'
-                                                                    ? 'secondary'
-                                                                    : theme.submissionStatus === 'pending'
-                                                                        ? 'outline'
-                                                                        : 'destructive'
-                                                            }
-                                                            title={
-                                                                theme.submissionStatus === 'rejected'
-                                                                    ? theme.submissionRejectionReason ?? ''
-                                                                    : ''
-                                                            }
-                                                            className={theme.submissionStatus === 'rejected' && theme.submissionRejectionReason ? 'cursor-help' : undefined}
-                                                        >
-                                                            {t(
-                                                                theme.submissionStatus === 'rejected'
-                                                                    ? 'denied'
-                                                                    : theme.submissionStatus,
-                                                            )}
-                                                        </Badge>
-                                                    ) : null}
-                                                    {importingThemeSlug === theme.slug ? (
-                                                        <Badge variant="outline">
-                                                            {t('importThemeNow')}...
-                                                        </Badge>
-                                                    ) : null}
-                                                    {features.themeOfficialCatalogEnabled && theme.submissionStatus !== 'pending' && theme.submissionStatus !== 'approved' ? (
+                                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        {theme.author ? (
+                                                            <Badge variant="secondary">
+                                                                {t('createdBy')}: {theme.author}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline">
+                                                                {t('createdBy')}: -
+                                                            </Badge>
+                                                        )}
+                                                        {theme.submissionStatus ? (
+                                                            <Badge
+                                                                variant={
+                                                                    theme.submissionStatus === 'approved'
+                                                                        ? 'secondary'
+                                                                        : theme.submissionStatus === 'pending'
+                                                                            ? 'outline'
+                                                                            : 'destructive'
+                                                                }
+                                                                title={
+                                                                    theme.submissionStatus === 'rejected'
+                                                                        ? theme.submissionRejectionReason ?? ''
+                                                                        : ''
+                                                                }
+                                                                className={theme.submissionStatus === 'rejected' && theme.submissionRejectionReason ? 'cursor-help' : undefined}
+                                                            >
+                                                                {t(
+                                                                    theme.submissionStatus === 'rejected'
+                                                                        ? 'denied'
+                                                                        : theme.submissionStatus,
+                                                                )}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline">
+                                                                {t('none')}
+                                                            </Badge>
+                                                        )}
+                                                        {importingThemeSlug === theme.slug ? (
+                                                            <Badge variant="outline">
+                                                                {t('importThemeNow')}...
+                                                            </Badge>
+                                                        ) : null}
+                                                    </div>
+                                                    {canManageThemes && features.themeOfficialCatalogEnabled && theme.submissionStatus !== 'pending' && theme.submissionStatus !== 'approved' ? (
                                                         <Button
                                                             type="button"
                                                             variant="secondary"
                                                             size="sm"
                                                             onClick={() => handleSubmitToOfficialThemes(theme)}
                                                             disabled={submittingThemeSlug === theme.slug}
+                                                            className="shrink-0"
                                                         >
                                                             <Upload />
                                                             {submittingThemeSlug === theme.slug ? `${t('submitToOfficialThemes')}...` : t('submitToOfficialThemes')}
@@ -464,12 +471,12 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
 
                 <div className="space-y-4">
                         {canManageThemes ? (
-                            <Card className="rounded-lg">
-                                <CardHeader>
-                                    <CardTitle>{t('importTheme')}</CardTitle>
-                                    <CardDescription>
-                                        {t('themeImportDescription')}
-                                    </CardDescription>
+                        <Card className="rounded-lg">
+                            <CardHeader>
+                                <CardTitle>{t('importTheme')}</CardTitle>
+                                <CardDescription>
+                                    {t('themeImportDescription')}
+                                </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-6">
                                     <form onSubmit={handleUrlImport} className="space-y-4">

@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -22,7 +23,13 @@ class TickerThemeController extends Controller
         $themes = $tickerStyles->paginateDetailed(10);
 
         if (request()->routeIs('themes.*')) {
-            $themes = $this->attachSubmissionState($themes);
+            $themes = $this->paginateThemeItems($this->filterApprovedThemes(
+                $this->attachSubmissionState([
+                    'data' => $tickerStyles->allDetailed(),
+                    'links' => [],
+                    'meta' => [],
+                ])['data'],
+            ), 10);
 
             return Inertia::render('themes/index', [
                 'themes' => $themes,
@@ -103,7 +110,11 @@ class TickerThemeController extends Controller
             abort(404);
         }
 
-        return Inertia::render('ticker/theme-preview', [
+        if (request()->routeIs('themes.*') && ! $this->isApprovedOfficialTheme($themeData['slug'])) {
+            abort(404);
+        }
+
+        return Inertia::render(request()->routeIs('themes.*') ? 'themes/theme-preview' : 'ticker/theme-preview', [
             'theme' => $themeData,
             'themesUrl' => request()->routeIs('themes.*')
                 ? route('themes.index')
@@ -238,5 +249,122 @@ class TickerThemeController extends Controller
         );
 
         return $themes;
+    }
+
+    /**
+     * @param list<array{
+     *     slug: string,
+     *     value: string,
+     *     label: string,
+     *     url: string,
+     *     author: string|null,
+     *     downloadUrl: string,
+     *     submissionStatus: string|null,
+     *     submissionRejectionReason: string|null
+     * }> $themes
+     * @return list<array{
+     *     slug: string,
+     *     value: string,
+     *     label: string,
+     *     url: string,
+     *     author: string|null,
+     *     downloadUrl: string,
+     *     submissionStatus: string|null,
+     *     submissionRejectionReason: string|null
+     * }>
+     */
+    private function filterApprovedThemes(array $themes): array
+    {
+        return array_values(array_filter(
+            $themes,
+            static fn (array $theme): bool => $theme['submissionStatus'] === 'approved',
+        ));
+    }
+
+    private function isApprovedOfficialTheme(string $slug): bool
+    {
+        return ThemeSubmission::query()
+            ->where('theme_slug', $slug)
+            ->where('status', 'approved')
+            ->exists();
+    }
+
+    /**
+     * @param list<array{
+     *     slug: string,
+     *     value: string,
+     *     label: string,
+     *     url: string,
+     *     author: string|null,
+     *     submissionStatus: string|null,
+     *     submissionRejectionReason: string|null
+     * }> $themes
+     * @return array{
+     *     data: list<array{
+     *         slug: string,
+     *         value: string,
+     *         label: string,
+     *         url: string,
+     *         author: string|null,
+     *         submissionStatus: string|null,
+     *         submissionRejectionReason: string|null,
+     *         downloadUrl: string
+     *     }>,
+     *     links: list<array{url: string|null, label: string, active: bool}>,
+     *     meta: array{
+     *         current_page: int,
+     *         from: int|null,
+     *         last_page: int,
+     *         path: string,
+     *         per_page: int,
+     *         to: int|null,
+     *         total: int,
+     *         first_page_url: string|null,
+     *         last_page_url: string|null,
+     *         next_page_url: string|null,
+     *         prev_page_url: string|null
+     *     }
+     * }
+     */
+    private function paginateThemeItems(array $themes, int $perPage = 10): array
+    {
+        $currentPage = max(1, LengthAwarePaginator::resolveCurrentPage());
+
+        $themes = array_map(
+            static fn (array $theme): array => [
+                ...$theme,
+                'downloadUrl' => route('ticker.themes.share.download', ['theme' => $theme['slug']]),
+            ],
+            $themes,
+        );
+
+        $paginator = new LengthAwarePaginator(
+            array_slice($themes, ($currentPage - 1) * $perPage, $perPage),
+            count($themes),
+            $perPage,
+            $currentPage,
+            [
+                'path' => LengthAwarePaginator::resolveCurrentPath(),
+                'pageName' => 'page',
+            ],
+        );
+
+        return [
+            'data' => array_slice($themes, ($currentPage - 1) * $perPage, $perPage),
+            'links' => [],
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'from' => $paginator->firstItem(),
+                'last_page' => $paginator->lastPage(),
+                'path' => $paginator->path(),
+                'per_page' => $paginator->perPage(),
+                'to' => $paginator->lastItem(),
+                'total' => $paginator->total(),
+                'first_page_url' => $paginator->url(1),
+                'last_page_url' => $paginator->url($paginator->lastPage()),
+                'next_page_url' => $paginator->nextPageUrl(),
+                'prev_page_url' => $paginator->previousPageUrl(),
+            ],
+        ];
     }
 }
