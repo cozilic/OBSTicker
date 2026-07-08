@@ -53,6 +53,8 @@ type Theme = {
     url: string;
     author: string | null;
     downloadUrl: string;
+    submissionStatus: 'pending' | 'approved' | 'rejected' | null;
+    submissionRejectionReason: string | null;
 };
 
 type PaginationLink = {
@@ -105,6 +107,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const [isImportingUrl, setIsImportingUrl] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [importingThemeSlug, setImportingThemeSlug] = useState<string | null>(null);
+    const [submittingThemeSlug, setSubmittingThemeSlug] = useState<string | null>(null);
     const [shareTheme, setShareTheme] = useState<Theme | null>(null);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [isGeneratingShareUrl, setIsGeneratingShareUrl] = useState(false);
@@ -167,6 +170,15 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
         router.post(themesRoutes.store.url(), { theme_url: theme.downloadUrl }, {
             onSuccess: () => router.flushAll(),
             onFinish: () => setImportingThemeSlug(null),
+        });
+    };
+
+    const handleSubmitToOfficialThemes = (theme: Theme) => {
+        setSubmittingThemeSlug(theme.slug);
+
+        router.post(`/ticker-admin/themes/${theme.slug}/submit`, {}, {
+            onSuccess: () => router.flushAll(),
+            onFinish: () => setSubmittingThemeSlug(null),
         });
     };
 
@@ -353,10 +365,45 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                             {t('createdBy')}: -
                                                         </Badge>
                                                     )}
+                                                    {theme.submissionStatus ? (
+                                                        <Badge
+                                                            variant={
+                                                                theme.submissionStatus === 'approved'
+                                                                    ? 'secondary'
+                                                                    : theme.submissionStatus === 'pending'
+                                                                        ? 'outline'
+                                                                        : 'destructive'
+                                                            }
+                                                            title={
+                                                                theme.submissionStatus === 'rejected'
+                                                                    ? theme.submissionRejectionReason ?? ''
+                                                                    : ''
+                                                            }
+                                                            className={theme.submissionStatus === 'rejected' && theme.submissionRejectionReason ? 'cursor-help' : undefined}
+                                                        >
+                                                            {t(
+                                                                theme.submissionStatus === 'rejected'
+                                                                    ? 'denied'
+                                                                    : theme.submissionStatus,
+                                                            )}
+                                                        </Badge>
+                                                    ) : null}
                                                     {importingThemeSlug === theme.slug ? (
                                                         <Badge variant="outline">
                                                             {t('importThemeNow')}...
                                                         </Badge>
+                                                    ) : null}
+                                                    {features.themeOfficialCatalogEnabled && theme.submissionStatus !== 'pending' && theme.submissionStatus !== 'approved' ? (
+                                                        <Button
+                                                            type="button"
+                                                            variant="secondary"
+                                                            size="sm"
+                                                            onClick={() => handleSubmitToOfficialThemes(theme)}
+                                                            disabled={submittingThemeSlug === theme.slug}
+                                                        >
+                                                            <Upload />
+                                                            {submittingThemeSlug === theme.slug ? `${t('submitToOfficialThemes')}...` : t('submitToOfficialThemes')}
+                                                        </Button>
                                                     ) : null}
                                                 </div>
                                             </div>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ThemeSubmission;
 use App\Models\TickerSetting;
 use App\Services\TickerStyleRepository;
 use Illuminate\Http\JsonResponse;
@@ -18,15 +19,20 @@ class TickerThemeController extends Controller
     public function index(TickerStyleRepository $tickerStyles): Response|RedirectResponse
     {
         $this->assertThemeCatalogEnabled();
+        $themes = $tickerStyles->paginateDetailed(10);
 
         if (request()->routeIs('themes.*')) {
+            $themes = $this->attachSubmissionState($themes);
+
             return Inertia::render('themes/index', [
-                'themes' => $tickerStyles->paginateDetailed(10),
+                'themes' => $themes,
             ]);
         }
 
+        $themes = $this->attachSubmissionState($themes);
+
         return Inertia::render('ticker/themes', [
-            'themes' => $tickerStyles->paginateDetailed(10),
+            'themes' => $themes,
             'createThemeUrl' => route('ticker.theme'),
         ]);
     }
@@ -164,5 +170,73 @@ class TickerThemeController extends Controller
         if (! config('ticker.themes.catalog_enabled', true)) {
             abort(404);
         }
+    }
+
+    /**
+     * @param array{
+     *     data: list<array{slug: string, value: string, label: string, url: string, author: string|null, downloadUrl: string}>,
+     *     links: list<array{url: string|null, label: string, active: bool}>,
+     *     meta: array{
+     *         current_page: int,
+     *         from: int|null,
+     *         last_page: int,
+     *         path: string,
+     *         per_page: int,
+     *         to: int|null,
+     *         total: int,
+     *         first_page_url: string|null,
+     *         last_page_url: string|null,
+     *         next_page_url: string|null,
+     *         prev_page_url: string|null
+     *     }
+     * } $themes
+     * @return array{
+     *     data: list<array{
+     *         slug: string,
+     *         value: string,
+     *         label: string,
+     *         url: string,
+     *         author: string|null,
+     *         downloadUrl: string,
+     *         submissionStatus: string|null,
+     *         submissionRejectionReason: string|null
+     *     }>,
+     *     links: list<array{url: string|null, label: string, active: bool}>,
+     *     meta: array{
+     *         current_page: int,
+     *         from: int|null,
+     *         last_page: int,
+     *         path: string,
+     *         per_page: int,
+     *         to: int|null,
+     *         total: int,
+     *         first_page_url: string|null,
+     *         last_page_url: string|null,
+     *         next_page_url: string|null,
+     *         prev_page_url: string|null
+     *     }
+     * }
+     */
+    private function attachSubmissionState(array $themes): array
+    {
+        $submissions = ThemeSubmission::query()
+            ->whereIn('theme_slug', collect($themes['data'])->pluck('slug')->all())
+            ->get()
+            ->keyBy('theme_slug');
+
+        $themes['data'] = array_map(
+            static function (array $theme) use ($submissions): array {
+                $submission = $submissions->get($theme['slug']);
+
+                return [
+                    ...$theme,
+                    'submissionStatus' => $submission?->status,
+                    'submissionRejectionReason' => $submission?->rejection_reason,
+                ];
+            },
+            $themes['data'],
+        );
+
+        return $themes;
     }
 }

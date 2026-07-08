@@ -41,6 +41,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::post('ticker-admin/themes', [TickerThemeController::class, 'store'])->name('ticker.themes.store');
     Route::delete('ticker-admin/themes/{theme}', [TickerThemeController::class, 'destroy'])->name('ticker.themes.destroy');
+
+    if (config('ticker.themes.official_catalog_enabled', false)) {
+        Route::post('ticker-admin/themes/{theme}/submit', [ThemeSubmissionController::class, 'storeFromTheme'])->name('ticker.themes.submit');
+    }
+
     Route::put('ticker-admin/settings', [TickerDashboardController::class, 'update'])->name('ticker.settings.update');
     Route::post('ticker-admin/settings/stitch', [TickerDashboardController::class, 'stitch'])->name('ticker.settings.stitch');
     Route::post('ticker-admin/messages', [TickerMessageController::class, 'store'])->name('ticker.messages.store');

@@ -10,6 +10,7 @@ use App\Services\TickerStyleRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -83,6 +84,87 @@ class ThemeSubmissionController extends Controller
         ]);
 
         return redirect()->route('themes.submitted');
+    }
+
+    public function storeFromTheme(string $theme, TickerStyleRepository $tickerStyles): RedirectResponse
+    {
+        $this->assertOfficialCatalogHost();
+
+        $slug = Str::slug($theme);
+        if ($slug === '' || ! $tickerStyles->existsTheme($slug)) {
+            return back()->withErrors([
+                'submission' => 'The selected theme could not be found.',
+            ]);
+        }
+
+        $themeData = $tickerStyles->findDetailed($slug);
+        if ($themeData === null) {
+            return back()->withErrors([
+                'submission' => 'The selected theme could not be found.',
+            ]);
+        }
+
+        $existingSubmission = ThemeSubmission::query()
+            ->where('theme_slug', $slug)
+            ->first();
+
+        if ($existingSubmission?->status === 'pending') {
+            return back()->withErrors([
+                'submission' => 'A submission for this theme is already pending.',
+            ]);
+        }
+
+        if ($existingSubmission?->status === 'approved') {
+            return back()->withErrors([
+                'submission' => 'This theme is already in the official catalog.',
+            ]);
+        }
+
+        try {
+            $archivePath = $tickerStyles->createThemeZip($slug);
+            $storedArchivePath = $this->storeThemeArchive($archivePath, $slug);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->withErrors([
+                'submission' => 'The theme could not be submitted.',
+            ]);
+        } finally {
+            if (isset($archivePath) && is_file($archivePath)) {
+                File::delete($archivePath);
+            }
+        }
+
+        ThemeSubmission::query()->updateOrCreate(
+            ['theme_slug' => $slug],
+            [
+                'theme_name' => $themeData['label'],
+                'author_name' => $themeData['author'] ?? (Auth::user()?->name ?? 'Unknown'),
+                'submitter_name' => trim(Auth::user()?->name ?? '') ?: null,
+                'submitter_email' => trim(Auth::user()?->email ?? '') ?: null,
+                'source_type' => 'local',
+                'source_url' => null,
+                'archive_path' => $storedArchivePath,
+                'status' => 'pending',
+                'notes' => null,
+                'reviewed_by_id' => null,
+                'reviewed_at' => null,
+                'published_at' => null,
+                'rejection_reason' => null,
+                'published_theme_slug' => null,
+            ],
+        );
+
+        if ($existingSubmission !== null && $existingSubmission->archive_path !== $storedArchivePath) {
+            Storage::disk('local')->delete($existingSubmission->archive_path);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Theme submitted to the official queue.',
+        ]);
+
+        return back();
     }
 
     public function submitted(): Response
@@ -311,5 +393,18 @@ class ThemeSubmissionController extends Controller
         Storage::disk('local')->putFileAs($directory, $uploaded, $filename);
 
         return $directory.'/'.$filename;
+    }
+
+    private function storeThemeArchive(string $archivePath, string $themeSlug): string
+    {
+        $directory = 'theme-submissions';
+        Storage::disk('local')->makeDirectory($directory);
+
+        $filename = $themeSlug.'-'.Str::uuid()->toString().'.zip';
+        $storedPath = $directory.'/'.$filename;
+
+        Storage::disk('local')->put($storedPath, File::get($archivePath));
+
+        return $storedPath;
     }
 }

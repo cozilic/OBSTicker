@@ -456,6 +456,66 @@ test('themes page lists imported themes and supports deletion', function () {
         ->and($settings->ticker_use_image_style)->toBeFalse();
 });
 
+test('themes page shows submission badges and can submit a local theme to the official queue', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $user = User::factory()->create();
+    $zipPath = createThemeZipFixture('aurora', 'Alex Example');
+
+    $this->actingAs($user)
+        ->post(route('ticker.themes.store'), [
+            'theme_zip' => new UploadedFile($zipPath, 'aurora.zip', 'application/zip', null, true),
+        ])
+        ->assertRedirect(route('ticker.themes.show', ['theme' => 'aurora']));
+
+    Storage::disk('local')->put('theme-submissions/aurora-old.zip', 'old-archive');
+
+    $submission = ThemeSubmission::query()->create([
+        'theme_name' => 'Aurora',
+        'theme_slug' => 'aurora',
+        'author_name' => 'Alex Example',
+        'submitter_name' => 'Reviewer',
+        'submitter_email' => 'reviewer@example.com',
+        'source_type' => 'upload',
+        'source_url' => null,
+        'archive_path' => 'theme-submissions/aurora-old.zip',
+        'status' => 'rejected',
+        'notes' => null,
+        'rejection_reason' => 'Too noisy.',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'aurora' && $theme['submissionStatus'] === 'rejected' && $theme['submissionRejectionReason'] === 'Too noisy.')));
+
+    $this->actingAs($user)
+        ->post(route('ticker.themes.submit', ['theme' => 'aurora']))
+        ->assertRedirect();
+
+    $submission->refresh();
+
+    expect($submission->status)->toBe('pending')
+        ->and($submission->submitter_email)->toBe($user->email)
+        ->and($submission->rejection_reason)->toBeNull()
+        ->and(Storage::disk('local')->exists('theme-submissions/aurora-old.zip'))->toBeFalse()
+        ->and(Storage::disk('local')->exists($submission->archive_path))->toBeTrue();
+
+    $submission->update([
+        'status' => 'approved',
+        'published_theme_slug' => 'aurora',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'aurora' && $theme['submissionStatus'] === 'approved')));
+});
+
 test('themes page paginates at ten themes per page', function () {
     $user = User::factory()->create();
 

@@ -31,6 +31,7 @@ const messages = {
             'Browse the shared catalog and download official themes.',
         openOfficialThemesCatalog: 'Open official catalog',
         submitTheme: 'Submit theme',
+        submitToOfficialThemes: 'Submit to Official themes',
         submitThemeDescription:
             'Send a theme to the official queue for review before it appears in the catalog.',
         submitThemeFormDescription:
@@ -49,6 +50,7 @@ const messages = {
             'Moderate incoming theme submissions before they are published.',
         pending: 'Pending',
         approved: 'Approved',
+        denied: 'Denied',
         rejected: 'Rejected',
         approveSubmission: 'Approve',
         rejectSubmission: 'Reject',
@@ -165,6 +167,7 @@ const messages = {
             'Bläddra i den delade samlingen och ladda ner officiella teman.',
         openOfficialThemesCatalog: 'Öppna officiell katalog',
         submitTheme: 'Skicka in tema',
+        submitToOfficialThemes: 'Skicka till officiella teman',
         submitThemeDescription:
             'Skicka ett tema till den officiella kön för granskning innan det syns i katalogen.',
         submitThemeFormDescription:
@@ -183,6 +186,7 @@ const messages = {
             'Granska inkommande temainskick innan de publiceras.',
         pending: 'Väntar',
         approved: 'Godkänd',
+        denied: 'Nekad',
         rejected: 'Avslagen',
         approveSubmission: 'Godkänn',
         rejectSubmission: 'Avslå',
