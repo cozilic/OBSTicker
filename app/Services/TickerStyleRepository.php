@@ -37,13 +37,19 @@ class TickerStyleRepository
         $this->compileThemes();
 
         $directories = scandir($this->baseDirectory()) ?: [];
+        $themes = [];
 
-        return array_values(collect($directories)
-            ->filter(fn (string $item): bool => $this->isThemeDirectory($item))
-            ->map(fn (string $item): array => $this->styleFromThemeDirectory($item))
-            ->sortBy('label')
-            ->values()
-            ->all());
+        foreach ($directories as $item) {
+            if (! $this->isThemeDirectory($item)) {
+                continue;
+            }
+
+            $themes[] = $this->styleFromThemeDirectory($item);
+        }
+
+        usort($themes, static fn (array $left, array $right): int => $left['label'] <=> $right['label']);
+
+        return $themes;
     }
 
     /**
@@ -459,7 +465,7 @@ class TickerStyleRepository
     }
 
     /**
-     * @return array{value: string, label: string, url: string}
+     * @return array{slug: string, value: string, label: string, url: string, author: string|null}
      */
     private function styleFromThemeDirectory(string $directory): array
     {
