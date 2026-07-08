@@ -175,6 +175,8 @@ test('ticker theme page is accessible to authenticated users', function () {
 });
 
 test('guests can browse the public themes catalog', function () {
+    File::deleteDirectory(public_path('ticker-styles'));
+
     createTickerThemeFixture('dusk');
 
     $this->get(route('ticker.themes.index'))

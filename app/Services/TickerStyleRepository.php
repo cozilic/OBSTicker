@@ -37,6 +37,10 @@ class TickerStyleRepository
     {
         $this->compileThemes();
 
+        if (! is_dir($this->baseDirectory())) {
+            return [];
+        }
+
         $directories = scandir($this->baseDirectory()) ?: [];
         $themes = [];
 
