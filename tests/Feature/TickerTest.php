@@ -182,7 +182,9 @@ test('themes page lists imported themes and supports deletion', function () {
             ->component('ticker/themes')
             ->where('createThemeUrl', route('ticker.theme'))
             ->where('features.themeCatalogEnabled', true)
-            ->where('themes', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'aurora' && $theme['label'] === 'Aurora' && $theme['author'] === 'Alex Example')));
+            ->where('themes.meta.current_page', 1)
+            ->where('themes.meta.per_page', 10)
+            ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'aurora' && $theme['label'] === 'Aurora' && $theme['author'] === 'Alex Example' && $theme['downloadUrl'] === route('ticker.themes.share.download', ['theme' => 'aurora']))));
 
     TickerSetting::current($user)->update([
         'ticker_style' => 'aurora.png',
@@ -202,6 +204,39 @@ test('themes page lists imported themes and supports deletion', function () {
     $settings = TickerSetting::current($user);
     expect($settings->ticker_style)->toBeNull()
         ->and($settings->ticker_use_image_style)->toBeFalse();
+});
+
+test('themes page paginates at ten themes per page', function () {
+    $user = User::factory()->create();
+
+    File::deleteDirectory(public_path('ticker-styles'));
+    File::ensureDirectoryExists(public_path('ticker-styles'));
+
+    for ($index = 1; $index <= 11; $index++) {
+        createTickerThemeFixture('theme-'.$index);
+    }
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('themes.meta.current_page', 1)
+            ->where('themes.meta.per_page', 10)
+            ->where('themes.meta.last_page', 2)
+            ->where('themes.data', fn (mixed $themes): bool => count($themes) === 10));
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.index', ['page' => 2]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('themes.meta.current_page', 2)
+            ->where('themes.meta.per_page', 10)
+            ->where('themes.meta.last_page', 2)
+            ->where('themes.data', fn (mixed $themes): bool => count($themes) === 1));
+
+    File::deleteDirectory(public_path('ticker-styles'));
 });
 
 test('themes can be shared and imported from a url', function () {

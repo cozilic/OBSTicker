@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Http\UploadedFile;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -50,6 +51,66 @@ class TickerStyleRepository
         usort($themes, static fn (array $left, array $right): int => $left['label'] <=> $right['label']);
 
         return $themes;
+    }
+
+    /**
+     * @return array{
+     *     data: list<array{slug: string, value: string, label: string, url: string, author: string|null, downloadUrl: string}>,
+     *     links: list<array{url: string|null, label: string, active: bool}>,
+     *     meta: array{
+     *         current_page: int,
+     *         from: int|null,
+     *         last_page: int,
+     *         path: string,
+     *         per_page: int,
+     *         to: int|null,
+     *         total: int,
+     *         first_page_url: string|null,
+     *         last_page_url: string|null,
+     *         next_page_url: string|null,
+     *         prev_page_url: string|null
+     *     }
+     * }
+     */
+    public function paginateDetailed(int $perPage = 10, ?int $page = null): array
+    {
+        $themes = array_map(
+            fn (array $theme): array => [
+                ...$theme,
+                'downloadUrl' => route('ticker.themes.share.download', ['theme' => $theme['slug']]),
+            ],
+            $this->allDetailed(),
+        );
+        $currentPage = max(1, $page ?? LengthAwarePaginator::resolveCurrentPage());
+
+        $paginator = new LengthAwarePaginator(
+            array_slice($themes, ($currentPage - 1) * $perPage, $perPage),
+            count($themes),
+            $perPage,
+            $currentPage,
+            [
+                'path' => LengthAwarePaginator::resolveCurrentPath(),
+                'pageName' => 'page',
+            ],
+        );
+
+        return [
+            'data' => array_slice($themes, ($currentPage - 1) * $perPage, $perPage),
+            'links' => [],
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'from' => $paginator->firstItem(),
+                'last_page' => $paginator->lastPage(),
+                'path' => $paginator->path(),
+                'per_page' => $paginator->perPage(),
+                'to' => $paginator->lastItem(),
+                'total' => $paginator->total(),
+                'first_page_url' => $paginator->url(1),
+                'last_page_url' => $paginator->url($paginator->lastPage()),
+                'next_page_url' => $paginator->nextPageUrl(),
+                'prev_page_url' => $paginator->previousPageUrl(),
+            ],
+        ];
     }
 
     /**

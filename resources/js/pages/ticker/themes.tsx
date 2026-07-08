@@ -52,10 +52,35 @@ type Theme = {
     label: string;
     url: string;
     author: string | null;
+    downloadUrl: string;
+};
+
+type PaginationLink = {
+    url: string | null;
+    label: string;
+    active: boolean;
+};
+
+type PaginatedThemes = {
+    data: Theme[];
+    links: PaginationLink[];
+    meta: {
+        current_page: number;
+        from: number | null;
+        last_page: number;
+        path: string;
+        per_page: number;
+        to: number | null;
+        total: number;
+        first_page_url: string | null;
+        last_page_url: string | null;
+        next_page_url: string | null;
+        prev_page_url: string | null;
+    };
 };
 
 type Props = {
-    themes: Theme[];
+    themes: PaginatedThemes;
     createThemeUrl: string;
 };
 
@@ -73,6 +98,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const [themeZip, setThemeZip] = useState<File | null>(null);
     const [isImportingUrl, setIsImportingUrl] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [importingThemeSlug, setImportingThemeSlug] = useState<string | null>(null);
     const [shareTheme, setShareTheme] = useState<Theme | null>(null);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [isGeneratingShareUrl, setIsGeneratingShareUrl] = useState(false);
@@ -124,6 +150,14 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
         router.post(themesRoutes.store.url(), formData, {
             forceFormData: true,
             onFinish: () => setIsUploading(false),
+        });
+    };
+
+    const handleQuickImport = (theme: Theme) => {
+        setImportingThemeSlug(theme.slug);
+
+        router.post(themesRoutes.store.url(), { theme_url: theme.downloadUrl }, {
+            onFinish: () => setImportingThemeSlug(null),
         });
     };
 
@@ -192,95 +226,156 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            {themes.length === 0 ? (
+                            {themes.data.length === 0 ? (
                                 <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
                                     <FolderOpen className="size-4 shrink-0" />
                                     <span>{t('themeListEmpty')}</span>
                                 </div>
                             ) : (
-                                themes.map((theme) => {
-                                    const downloadThemeUrl = themeShareRoutes.download.url(theme.slug);
-
-                                    return (
-                                        <div
-                                            key={theme.slug}
-                                            className="rounded-md border p-3"
-                                        >
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <Link
-                                                        href={themesRoutes.show.url(theme.slug)}
-                                                        className="truncate font-medium text-foreground transition-colors hover:text-primary"
-                                                    >
-                                                        {theme.label}
-                                                    </Link>
-                                                    <p className="truncate text-xs text-muted-foreground">
-                                                        {theme.slug}
-                                                    </p>
+                                <>
+                                    <div className="space-y-3">
+                                        {themes.data.map((theme) => (
+                                            <div
+                                                key={theme.slug}
+                                                className="rounded-md border p-3"
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <Link
+                                                            href={themesRoutes.show.url(theme.slug)}
+                                                            className="truncate font-medium text-foreground transition-colors hover:text-primary"
+                                                        >
+                                                            {theme.label}
+                                                        </Link>
+                                                        <p className="truncate text-xs text-muted-foreground">
+                                                            {theme.slug}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex shrink-0 items-center gap-2">
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="gap-1.5 px-3"
+                                                                >
+                                                                    <Share2 />
+                                                                    {t('shareTheme')}
+                                                                    <ChevronDown />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="w-52">
+                                                                <DropdownMenuLabel>
+                                                                    {t('shareTheme')}
+                                                                </DropdownMenuLabel>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem asChild>
+                                                                    <a href={theme.downloadUrl}>
+                                                                        <Download />
+                                                                        <span>{t('downloadThemeZip')}</span>
+                                                                    </a>
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    onSelect={(event) => {
+                                                                        event.preventDefault();
+                                                                        handleQuickImport(theme);
+                                                                    }}
+                                                                >
+                                                                    <Plus />
+                                                                    <span>{t('importThemeNow')}</span>
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
+                                                                    onSelect={(event) => {
+                                                                        event.preventDefault();
+                                                                        void handleShareUrl(theme);
+                                                                    }}
+                                                                >
+                                                                    <Link2 />
+                                                                    <span>{t('shareThemeUrl')}</span>
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                        <Button
+                                                            type="button"
+                                                            size="icon"
+                                                            variant="outline"
+                                                            onClick={() => handleDelete(theme)}
+                                                        >
+                                                            <Trash2 />
+                                                            <span className="sr-only">
+                                                                {t('deleteTheme')}
+                                                            </span>
+                                                        </Button>
+                                                    </div>
                                                 </div>
-                                                <div className="flex shrink-0 items-center gap-2">
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button
-                                                                type="button"
-                                                                variant="outline"
-                                                                size="sm"
-                                                                className="gap-1.5 px-3"
-                                                            >
-                                                                <Share2 />
-                                                                {t('shareTheme')}
-                                                                <ChevronDown />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-52">
-                                                            <DropdownMenuLabel>
-                                                                {t('shareTheme')}
-                                                            </DropdownMenuLabel>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem asChild>
-                                                                <a href={downloadThemeUrl}>
-                                                                    <Download />
-                                                                    <span>{t('downloadThemeZip')}</span>
-                                                                </a>
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                onSelect={(event) => {
-                                                                    event.preventDefault();
-                                                                    void handleShareUrl(theme);
-                                                                }}
-                                                            >
-                                                                <Link2 />
-                                                                <span>{t('shareThemeUrl')}</span>
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                    <Button
-                                                        type="button"
-                                                        size="icon"
-                                                        variant="outline"
-                                                        onClick={() => handleDelete(theme)}
-                                                    >
-                                                        <Trash2 />
-                                                        <span className="sr-only">
-                                                            {t('deleteTheme')}
-                                                        </span>
-                                                    </Button>
+                                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                    {theme.author ? (
+                                                        <Badge variant="secondary">
+                                                            {t('createdBy')}: {theme.author}
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline">
+                                                            {t('createdBy')}: -
+                                                        </Badge>
+                                                    )}
+                                                    {importingThemeSlug === theme.slug ? (
+                                                        <Badge variant="outline">
+                                                            {t('importThemeNow')}...
+                                                        </Badge>
+                                                    ) : null}
                                                 </div>
                                             </div>
-                                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                                {theme.author ? (
-                                                    <Badge variant="secondary">
-                                                        {t('createdBy')}: {theme.author}
-                                                    </Badge>
+                                        ))}
+                                    </div>
+
+                                    {themes.meta.last_page > 1 ? (
+                                        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm">
+                                            <p className="text-muted-foreground">
+                                                {themes.meta.from !== null && themes.meta.to !== null ? (
+                                                    <>
+                                                        {themes.meta.from} - {themes.meta.to} / {themes.meta.total}
+                                                    </>
                                                 ) : (
-                                                    <Badge variant="outline">
-                                                        {t('createdBy')}: -
-                                                    </Badge>
+                                                    <>{themes.meta.total}</>
+                                                )}
+                                            </p>
+                                            <div className="flex items-center gap-2">
+                                                {themes.meta.prev_page_url !== null ? (
+                                                    <Button type="button" variant="outline" size="sm" asChild>
+                                                        <Link
+                                                            href={themesRoutes.index.url({ query: { page: themes.meta.current_page - 1 } })}
+                                                            preserveScroll
+                                                        >
+                                                            {t('previous')}
+                                                        </Link>
+                                                    </Button>
+                                                ) : (
+                                                    <Button type="button" variant="outline" size="sm" disabled>
+                                                        {t('previous')}
+                                                    </Button>
+                                                )}
+                                                <span className="min-w-20 text-center text-muted-foreground">
+                                                    {themes.meta.current_page} / {themes.meta.last_page}
+                                                </span>
+                                                {themes.meta.next_page_url !== null ? (
+                                                    <Button type="button" variant="outline" size="sm" asChild>
+                                                        <Link
+                                                            href={themesRoutes.index.url({ query: { page: themes.meta.current_page + 1 } })}
+                                                            preserveScroll
+                                                        >
+                                                            {t('next')}
+                                                        </Link>
+                                                    </Button>
+                                                ) : (
+                                                    <Button type="button" variant="outline" size="sm" disabled>
+                                                        {t('next')}
+                                                    </Button>
                                                 )}
                                             </div>
                                         </div>
-                                    );
-                                })
+                                    ) : null}
+                                </>
                             )}
                         </CardContent>
                     </Card>

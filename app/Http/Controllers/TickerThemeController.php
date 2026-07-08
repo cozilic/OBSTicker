@@ -28,7 +28,7 @@ class TickerThemeController extends Controller
         }
 
         return Inertia::render('ticker/themes', [
-            'themes' => $tickerStyles->allDetailed(),
+            'themes' => $tickerStyles->paginateDetailed(10),
             'createThemeUrl' => route('ticker.theme'),
         ]);
     }
