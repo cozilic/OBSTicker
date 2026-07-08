@@ -20,6 +20,7 @@ afterEach(function (): void {
     File::delete(public_path('ticker-styles/aurora.json'));
     File::deleteDirectory(public_path('ticker-styles/aurora'));
     File::deleteDirectory(public_path('ticker-styles/dusk'));
+    File::deleteDirectory(public_path('ticker-styles/broken-theme'));
     File::deleteDirectory(public_path('ticker-styles/compiled'));
     File::deleteDirectory(public_path('ticker-theme-shares'));
     Storage::disk('local')->deleteDirectory('theme-submissions');
@@ -67,6 +68,21 @@ function createTickerThemeFixture(string $directory = 'dusk'): string
     ], JSON_PRETTY_PRINT));
 
     return $directory.'.png';
+}
+
+function createBrokenTickerThemeFixture(string $directory = 'broken-theme'): void
+{
+    $themeDir = public_path('ticker-styles/'.$directory);
+    File::ensureDirectoryExists($themeDir);
+    File::put($themeDir.'/title.png', 'not-a-valid-png');
+    File::put($themeDir.'/content.png', 'still-not-a-valid-png');
+    File::put($themeDir.'/end.png', 'also-not-a-valid-png');
+    File::put($themeDir.'/'.$directory.'.json', json_encode([
+        'name' => 'Broken Theme',
+        'theme_name' => $directory,
+        'author' => 'Fixture Author',
+        'created_at' => '2026-07-07 00:00:00',
+    ], JSON_PRETTY_PRINT));
 }
 
 function createThemeZipFixture(string $themeName = 'aurora', string $author = 'Aggen'): string
@@ -136,6 +152,17 @@ test('public themes list is available on its own route', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('themes/index'));
+});
+
+test('public themes list skips broken theme assets instead of failing', function () {
+    createTickerThemeFixture('dusk');
+    createBrokenTickerThemeFixture('broken-theme');
+
+    $this->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'dusk')));
 });
 
 test('public visitors can open the theme submission form', function () {

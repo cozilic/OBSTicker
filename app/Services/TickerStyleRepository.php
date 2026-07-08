@@ -49,7 +49,11 @@ class TickerStyleRepository
                 continue;
             }
 
-            $themes[] = $this->styleFromThemeDirectory($item);
+            try {
+                $themes[] = $this->styleFromThemeDirectory($item);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
         }
 
         usort($themes, static fn (array $left, array $right): int => $left['label'] <=> $right['label']);
@@ -400,8 +404,12 @@ class TickerStyleRepository
                 }
 
                 if ($needsCompile) {
-                    $this->stitchTheme($titleFile, $contentFile, $endFile, $outputPng, $outputJson, $themeJson);
-                    $this->deleteLegacyCompiledFiles($item);
+                    try {
+                        $this->stitchTheme($titleFile, $contentFile, $endFile, $outputPng, $outputJson, $themeJson);
+                        $this->deleteLegacyCompiledFiles($item);
+                    } catch (\Throwable $exception) {
+                        report($exception);
+                    }
                 }
             }
         }
