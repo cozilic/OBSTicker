@@ -180,9 +180,11 @@ class ThemeSubmissionController extends Controller
                     true,
                 ),
             );
-        } catch (\RuntimeException $exception) {
+        } catch (\Throwable $exception) {
+            report($exception);
+
             return back()->withErrors([
-                'submission' => $exception->getMessage(),
+                'submission' => 'The submission could not be approved.',
             ]);
         }
 

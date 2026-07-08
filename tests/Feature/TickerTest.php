@@ -6,6 +6,7 @@ use App\Models\ThemeSubmission;
 use App\Models\TickerMessage;
 use App\Models\TickerSetting;
 use App\Models\User;
+use App\Services\TickerStyleRepository;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -207,6 +208,34 @@ test('owners can review theme submissions', function () {
         ->and(File::exists(public_path('ticker-styles/aurora/title.png')))->toBeTrue()
         ->and(File::exists(public_path('ticker-styles/aurora/aurora.json')))->toBeTrue()
         ->and(Storage::disk('local')->exists($submission->archive_path))->toBeFalse();
+});
+
+test('theme approval reports unexpected import failures instead of crashing', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'email' => config('ticker.owner_email'),
+    ]);
+    Storage::disk('local')->put('theme-submissions/aurora-test.zip', 'not-a-real-zip');
+    $submission = ThemeSubmission::query()->create([
+        'theme_name' => 'Aurora',
+        'theme_slug' => 'aurora',
+        'author_name' => 'Alex Example',
+        'archive_path' => 'theme-submissions/aurora-test.zip',
+        'source_type' => 'upload',
+        'status' => 'pending',
+    ]);
+
+    $this->mock(TickerStyleRepository::class, function ($mock): void {
+        $mock->shouldReceive('existsTheme')->andReturnFalse();
+        $mock->shouldReceive('importThemeZip')->andThrow(new Error('boom'));
+    });
+
+    $this->actingAs($owner)
+        ->post(route('ticker.theme-submissions.approve', ['themeSubmission' => $submission]))
+        ->assertRedirect()
+        ->assertSessionHasErrors('submission');
 });
 
 test('self hosted installs do not expose theme submissions navigation', function () {
