@@ -43,6 +43,7 @@ class HandleInertiaRequests extends Middleware
             ],
             'features' => [
                 'themeCatalogEnabled' => config('ticker.themes.catalog_enabled', true),
+                'themeLandingLinkEnabled' => config('ticker.themes.landing_link_enabled', false),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

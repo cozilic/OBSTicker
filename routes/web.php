@@ -22,13 +22,14 @@ Route::get('submit/twitch/callback', [SubmitterTwitchAuthController::class, 'cal
 Route::get('ticker-admin', TickerDashboardController::class)->name('ticker.dashboard');
 Route::get('ticker-admin/theme', [TickerDashboardController::class, 'theme'])->name('ticker.theme');
 
+Route::get('ticker-admin/themes', [TickerThemeController::class, 'index'])->name('ticker.themes.index');
+Route::get('ticker-admin/themes/{theme}', [TickerThemeController::class, 'show'])->name('ticker.themes.show');
+Route::get('ticker-admin/themes/{theme}/share', [TickerThemeController::class, 'share'])->name('ticker.themes.share');
+Route::get('ticker-admin/themes/{theme}/share/download', [TickerThemeController::class, 'download'])->name('ticker.themes.share.download');
+Route::post('ticker-admin/themes/{theme}/share/url', [TickerThemeController::class, 'generateShareUrl'])->name('ticker.themes.share.url');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
-    Route::get('ticker-admin/themes', [TickerThemeController::class, 'index'])->name('ticker.themes.index');
-    Route::get('ticker-admin/themes/{theme}', [TickerThemeController::class, 'show'])->name('ticker.themes.show');
-    Route::get('ticker-admin/themes/{theme}/share', [TickerThemeController::class, 'share'])->name('ticker.themes.share');
-    Route::get('ticker-admin/themes/{theme}/share/download', [TickerThemeController::class, 'download'])->name('ticker.themes.share.download');
-    Route::post('ticker-admin/themes/{theme}/share/url', [TickerThemeController::class, 'generateShareUrl'])->name('ticker.themes.share.url');
     Route::post('ticker-admin/themes', [TickerThemeController::class, 'store'])->name('ticker.themes.store');
     Route::delete('ticker-admin/themes/{theme}', [TickerThemeController::class, 'destroy'])->name('ticker.themes.destroy');
     Route::put('ticker-admin/settings', [TickerDashboardController::class, 'update'])->name('ticker.settings.update');

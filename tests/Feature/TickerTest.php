@@ -109,6 +109,24 @@ test('ticker admin redirects guests to login after setup', function () {
         ->assertRedirect(route('login'));
 });
 
+test('landing page hides the public themes link by default', function () {
+    $this->get(route('home'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('welcome')
+            ->where('features.themeLandingLinkEnabled', false));
+});
+
+test('landing page can show the public themes link on the main site', function () {
+    config(['ticker.themes.landing_link_enabled' => true]);
+
+    $this->get(route('home'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('welcome')
+            ->where('features.themeLandingLinkEnabled', true));
+});
+
 test('authenticated users can manage ticker messages', function () {
     $user = User::factory()->create();
 
@@ -154,6 +172,28 @@ test('ticker theme page is accessible to authenticated users', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('ticker/theme'));
+});
+
+test('guests can browse the public themes catalog', function () {
+    createTickerThemeFixture('dusk');
+
+    $this->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('themes.meta.current_page', 1)
+            ->where('themes.meta.per_page', 10)
+            ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'dusk')));
+});
+
+test('guests can preview public themes', function () {
+    createTickerThemeFixture('dusk');
+
+    $this->get(route('ticker.themes.show', ['theme' => 'dusk']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/theme-preview')
+            ->where('theme.slug', 'dusk'));
 });
 
 test('themes page lists imported themes and supports deletion', function () {

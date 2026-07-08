@@ -93,7 +93,11 @@ const shareProgressKeys = [
 
 export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const { t } = useTranslation();
-    const { errors } = usePage<{ errors: Record<string, string> }>().props;
+    const { auth, errors } = usePage<{
+        auth: { user: { id: number } | null };
+        errors: Record<string, string>;
+    }>().props;
+    const canManageThemes = auth.user !== null;
     const [themeImportUrl, setThemeImportUrl] = useState('');
     const [themeZip, setThemeZip] = useState<File | null>(null);
     const [isImportingUrl, setIsImportingUrl] = useState(false);
@@ -279,34 +283,41 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                                 <DropdownMenuItem
                                                                     onSelect={(event) => {
                                                                         event.preventDefault();
-                                                                        handleQuickImport(theme);
-                                                                    }}
-                                                                >
-                                                                    <Plus />
-                                                                    <span>{t('importThemeNow')}</span>
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem
-                                                                    onSelect={(event) => {
-                                                                        event.preventDefault();
                                                                         void handleShareUrl(theme);
                                                                     }}
                                                                 >
                                                                     <Link2 />
                                                                     <span>{t('shareThemeUrl')}</span>
                                                                 </DropdownMenuItem>
+                                                                {canManageThemes ? (
+                                                                    <>
+                                                                        <DropdownMenuSeparator />
+                                                                        <DropdownMenuItem
+                                                                            onSelect={(event) => {
+                                                                                event.preventDefault();
+                                                                                handleQuickImport(theme);
+                                                                            }}
+                                                                        >
+                                                                            <Plus />
+                                                                            <span>{t('importThemeNow')}</span>
+                                                                        </DropdownMenuItem>
+                                                                    </>
+                                                                ) : null}
                                                             </DropdownMenuContent>
                                                         </DropdownMenu>
-                                                        <Button
-                                                            type="button"
-                                                            size="icon"
-                                                            variant="outline"
-                                                            onClick={() => handleDelete(theme)}
-                                                        >
-                                                            <Trash2 />
-                                                            <span className="sr-only">
-                                                                {t('deleteTheme')}
-                                                            </span>
-                                                        </Button>
+                                                        {canManageThemes ? (
+                                                            <Button
+                                                                type="button"
+                                                                size="icon"
+                                                                variant="outline"
+                                                                onClick={() => handleDelete(theme)}
+                                                            >
+                                                                <Trash2 />
+                                                                <span className="sr-only">
+                                                                    {t('deleteTheme')}
+                                                                </span>
+                                                            </Button>
+                                                        ) : null}
                                                     </div>
                                                 </div>
                                                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -382,104 +393,108 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                 </aside>
 
                 <div className="space-y-4">
-                    <Card className="rounded-lg">
-                        <CardHeader>
-                            <CardTitle>{t('importTheme')}</CardTitle>
-                            <CardDescription>
-                                {t('themeImportDescription')}
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <form onSubmit={handleUrlImport} className="space-y-4">
-                                <div>
-                                    <Label htmlFor="theme_url">
-                                        {t('themeImportUrl')}
-                                    </Label>
-                                    <Input
-                                        id="theme_url"
-                                        name="theme_url"
-                                        type="url"
-                                        value={themeImportUrl}
-                                        onChange={(event) =>
-                                            setThemeImportUrl(event.target.value)
-                                        }
-                                        placeholder="https://example.com/scoreboard.zip"
-                                        className="mt-1"
-                                    />
-                                    <InputError
-                                        className="mt-2"
-                                        message={errors.theme_url}
-                                    />
-                                </div>
-                                <Button
-                                    type="submit"
-                                    variant="outline"
-                                    disabled={isImportingUrl || themeImportUrl.trim() === ''}
-                                >
-                                    <Link2 />
-                                    {t('importThemeFromUrl')}
-                                </Button>
-                            </form>
-
-                            <div className="border-t pt-4">
-                                <form onSubmit={handleUpload} className="space-y-4">
-                                    <div>
-                                        <Label htmlFor="theme_zip">
-                                            {t('themeZip')}
-                                        </Label>
-                                        <Input
-                                            id="theme_zip"
-                                            name="theme_zip"
-                                            type="file"
-                                            accept=".zip,application/zip"
-                                            onChange={(event) =>
-                                                setThemeZip(
-                                                    event.target.files?.[0] ??
-                                                        null,
-                                                )
-                                            }
-                                            className="mt-1"
-                                        />
-                                        <InputError
-                                            className="mt-2"
-                                            message={errors.theme_zip}
-                                        />
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2">
+                        {canManageThemes ? (
+                            <Card className="rounded-lg">
+                                <CardHeader>
+                                    <CardTitle>{t('importTheme')}</CardTitle>
+                                    <CardDescription>
+                                        {t('themeImportDescription')}
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    <form onSubmit={handleUrlImport} className="space-y-4">
+                                        <div>
+                                            <Label htmlFor="theme_url">
+                                                {t('themeImportUrl')}
+                                            </Label>
+                                            <Input
+                                                id="theme_url"
+                                                name="theme_url"
+                                                type="url"
+                                                value={themeImportUrl}
+                                                onChange={(event) =>
+                                                    setThemeImportUrl(event.target.value)
+                                                }
+                                                placeholder="https://example.com/scoreboard.zip"
+                                                className="mt-1"
+                                            />
+                                            <InputError
+                                                className="mt-2"
+                                                message={errors.theme_url}
+                                            />
+                                        </div>
                                         <Button
                                             type="submit"
-                                            disabled={isUploading || !themeZip}
+                                            variant="outline"
+                                            disabled={isImportingUrl || themeImportUrl.trim() === ''}
                                         >
-                                            <Upload />
-                                            {t('uploadThemeZip')}
+                                            <Link2 />
+                                            {t('importThemeFromUrl')}
                                         </Button>
-                                        {themeZip ? (
-                                            <span className="text-sm text-muted-foreground">
-                                                {themeZip.name}
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                </form>
-                            </div>
-                        </CardContent>
-                    </Card>
+                                    </form>
 
-                    <Card className="rounded-lg">
-                        <CardHeader>
-                            <CardTitle>{t('createTheme')}</CardTitle>
-                            <CardDescription>
-                                {t('createThemeDescription')}
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex flex-wrap items-center gap-2">
-                            <Button asChild>
-                                <Link href={createThemeUrl}>
-                                    <Plus />
-                                    {t('createTheme')}
-                                </Link>
-                            </Button>
-                        </CardContent>
-                    </Card>
+                                    <div className="border-t pt-4">
+                                        <form onSubmit={handleUpload} className="space-y-4">
+                                            <div>
+                                                <Label htmlFor="theme_zip">
+                                                    {t('themeZip')}
+                                                </Label>
+                                                <Input
+                                                    id="theme_zip"
+                                                    name="theme_zip"
+                                                    type="file"
+                                                    accept=".zip,application/zip"
+                                                    onChange={(event) =>
+                                                        setThemeZip(
+                                                            event.target.files?.[0] ??
+                                                                null,
+                                                        )
+                                                    }
+                                                    className="mt-1"
+                                                />
+                                                <InputError
+                                                    className="mt-2"
+                                                    message={errors.theme_zip}
+                                                />
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Button
+                                                    type="submit"
+                                                    disabled={isUploading || !themeZip}
+                                                >
+                                                    <Upload />
+                                                    {t('uploadThemeZip')}
+                                                </Button>
+                                                {themeZip ? (
+                                                    <span className="text-sm text-muted-foreground">
+                                                        {themeZip.name}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </form>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ) : null}
+
+                    {canManageThemes ? (
+                        <Card className="rounded-lg">
+                            <CardHeader>
+                                <CardTitle>{t('createTheme')}</CardTitle>
+                                <CardDescription>
+                                    {t('createThemeDescription')}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="flex flex-wrap items-center gap-2">
+                                <Button asChild>
+                                    <Link href={createThemeUrl}>
+                                        <Plus />
+                                        {t('createTheme')}
+                                    </Link>
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    ) : null}
                 </div>
             </div>
 

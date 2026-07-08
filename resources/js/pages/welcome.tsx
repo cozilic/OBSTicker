@@ -1,12 +1,16 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { Download, Github, LogIn } from 'lucide-react';
+import { Download, Github, LogIn, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { dashboard, login } from '@/routes';
+import themesRoutes from '@/routes/ticker/themes';
 
 const repositoryUrl = 'https://github.com/cozilic/OBSTicker';
 
 export default function Welcome() {
-    const { auth } = usePage().props;
+    const { auth, features } = usePage<{
+        auth: { user: { id: number } | null };
+        features: { themeLandingLinkEnabled: boolean };
+    }>().props;
 
     return (
         <>
@@ -50,6 +54,19 @@ export default function Welcome() {
                             </p>
                         </div>
                         <div className="flex flex-wrap gap-3">
+                            {features.themeLandingLinkEnabled ? (
+                                <Button
+                                    size="lg"
+                                    variant="outline"
+                                    asChild
+                                    className="border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                                >
+                                    <Link href={themesRoutes.index.url()}>
+                                        <FolderOpen />
+                                        Themes
+                                    </Link>
+                                </Button>
+                            ) : null}
                             <Button
                                 size="lg"
                                 variant="outline"

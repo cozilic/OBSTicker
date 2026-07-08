@@ -1,9 +1,13 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from '@/lib/i18n';
+
+type AuthProps = {
+    auth: { user: { id: number } | null };
+};
 
 type Theme = {
     slug: string;
@@ -21,6 +25,8 @@ type Props = {
 
 export default function TickerThemePreview({ theme, themesUrl, createThemeUrl }: Props) {
     const { t } = useTranslation();
+    const { auth } = usePage<AuthProps>().props;
+    const canManageThemes = auth.user !== null;
 
     return (
         <>
@@ -42,12 +48,14 @@ export default function TickerThemePreview({ theme, themesUrl, createThemeUrl }:
                                 {t('backToThemes')}
                             </Link>
                         </Button>
-                        <Button asChild>
-                            <Link href={createThemeUrl}>
-                                <Plus />
-                                {t('createAnotherTheme')}
-                            </Link>
-                        </Button>
+                        {canManageThemes ? (
+                            <Button asChild>
+                                <Link href={createThemeUrl}>
+                                    <Plus />
+                                    {t('createAnotherTheme')}
+                                </Link>
+                            </Button>
+                        ) : null}
                     </div>
                 </div>
 

@@ -3,13 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\TickerSetting;
-use App\Models\User;
 use App\Services\TickerStyleRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,12 +19,6 @@ class TickerThemeController extends Controller
     {
         $this->assertThemeCatalogEnabled();
 
-        if (! Auth::check()) {
-            return User::query()->exists()
-                ? redirect()->route('login')
-                : redirect()->route('register');
-        }
-
         return Inertia::render('ticker/themes', [
             'themes' => $tickerStyles->paginateDetailed(10),
             'createThemeUrl' => route('ticker.theme'),
@@ -36,12 +28,6 @@ class TickerThemeController extends Controller
     public function share(string $theme, TickerStyleRepository $tickerStyles): Response|RedirectResponse
     {
         $this->assertThemeCatalogEnabled();
-
-        if (! Auth::check()) {
-            return User::query()->exists()
-                ? redirect()->route('login')
-                : redirect()->route('register');
-        }
 
         $slug = Str::slug($theme);
         if ($slug === '' || ! $tickerStyles->existsTheme($slug)) {
@@ -99,12 +85,6 @@ class TickerThemeController extends Controller
     public function show(string $theme, TickerStyleRepository $tickerStyles): Response|RedirectResponse
     {
         $this->assertThemeCatalogEnabled();
-
-        if (! Auth::check()) {
-            return User::query()->exists()
-                ? redirect()->route('login')
-                : redirect()->route('register');
-        }
 
         $themeData = $tickerStyles->findDetailed($theme);
         if ($themeData === null) {
