@@ -38,6 +38,7 @@ class HandleInertiaRequests extends Middleware
     {
         $officialCatalogUrl = config('ticker.themes.official_catalog_url', 'https://ticker.norrnet.online/themes');
         $officialCatalogHost = parse_url($officialCatalogUrl, PHP_URL_HOST);
+        $officialCatalogEnabled = config('ticker.themes.official_catalog_enabled', false);
 
         return [
             ...parent::share($request),
@@ -47,11 +48,13 @@ class HandleInertiaRequests extends Middleware
             ],
             'features' => [
                 'themeCatalogEnabled' => config('ticker.themes.catalog_enabled', true),
-                'themeLandingLinkEnabled' => config('ticker.themes.landing_link_enabled', false),
-                'themeOfficialCatalogLinkEnabled' => $officialCatalogHost !== null
+                'themeLandingLinkEnabled' => $officialCatalogEnabled
+                    && config('ticker.themes.landing_link_enabled', false),
+                'themeOfficialCatalogLinkEnabled' => $officialCatalogEnabled
+                    && $officialCatalogHost !== null
                     && $request->getHost() !== $officialCatalogHost,
             ],
-            'themeCatalogUrl' => $officialCatalogUrl,
+            'themeCatalogUrl' => $officialCatalogEnabled ? $officialCatalogUrl : null,
             'isOfficialCatalogHost' => $officialCatalogHost !== null
                 && $request->getHost() === $officialCatalogHost,
             'canModerateThemes' => $request->user() instanceof User && $request->user()->isPlatformOwner(),

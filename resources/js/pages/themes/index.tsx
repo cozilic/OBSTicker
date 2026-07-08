@@ -15,7 +15,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/lib/i18n';
-import publicThemesRoutes from '@/routes/themes';
 import tickerThemesRoutes from '@/routes/ticker/themes';
 import { dashboard, login } from '@/routes';
 
@@ -216,7 +215,7 @@ export default function PublicThemes({ themes }: Props) {
                                     </CardHeader>
                                     <CardContent className="flex flex-wrap gap-2">
                                         <Button asChild variant="outline">
-                                            <Link href={publicThemesRoutes.show.url(theme.slug)}>
+                                            <Link href={`/themes/${theme.slug}`}>
                                                 {t('themePreview')}
                                             </Link>
                                         </Button>

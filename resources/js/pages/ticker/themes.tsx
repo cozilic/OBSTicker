@@ -96,7 +96,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const { auth, errors, features, themeCatalogUrl } = usePage<{
         auth: { user: { id: number } | null };
         features: { themeOfficialCatalogLinkEnabled: boolean };
-        themeCatalogUrl: string;
+        themeCatalogUrl: string | null;
         errors: Record<string, string>;
     }>().props;
     const canManageThemes = auth.user !== null;
@@ -234,7 +234,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                             </CardHeader>
                             <CardContent>
                                 <Button asChild variant="outline" className="w-full justify-start">
-                                    <a href={themeCatalogUrl} target="_blank" rel="noreferrer">
+                                    <a href={themeCatalogUrl ?? '#'} target="_blank" rel="noreferrer">
                                         {t('openOfficialThemesCatalog')}
                                     </a>
                                 </Button>
