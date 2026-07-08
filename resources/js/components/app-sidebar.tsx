@@ -41,6 +41,9 @@ const tickerNavItems: NavItem[] = [
         href: '/ticker-admin/theme',
         icon: RadioTower,
     },
+];
+
+const moderationNavItems: NavItem[] = [
     {
         title: 'Theme submissions',
         href: '/ticker-admin/theme-submissions',
@@ -50,7 +53,7 @@ const tickerNavItems: NavItem[] = [
 
 const translateNavItems = (
     items: NavItem[],
-    t: (key: 'overview' | 'ticker' | 'themes' | 'createTheme' | 'themeSubmissions') => string,
+    t: (key: 'overview' | 'ticker' | 'themes' | 'createTheme' | 'themeSubmissions' | 'moderation') => string,
 ) =>
     items.map((item) => ({
         ...item,
@@ -82,13 +85,10 @@ export function AppSidebar() {
         ),
         t,
     );
-    const filteredTickerNavItems = translatedTickerNavItems.filter((item) => {
-        if (item.title === t('themeSubmissions')) {
-            return canModerateThemes && isOfficialCatalogHost;
-        }
-
-        return true;
-    });
+    const translatedModerationNavItems = translateNavItems(moderationNavItems, t);
+    const filteredModerationNavItems = canModerateThemes && isOfficialCatalogHost
+        ? translatedModerationNavItems
+        : [];
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -106,7 +106,10 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain label={t('platform')} items={translatedPlatformNavItems} />
-                <NavMain label={t('ticker')} items={filteredTickerNavItems} />
+                <NavMain label={t('ticker')} items={translatedTickerNavItems} />
+                {filteredModerationNavItems.length > 0 ? (
+                    <NavMain label={t('moderation')} items={filteredModerationNavItems} />
+                ) : null}
             </SidebarContent>
 
             <SidebarFooter>
