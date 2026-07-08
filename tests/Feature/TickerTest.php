@@ -150,6 +150,7 @@ test('landing page can show the public themes link on the main site', function (
 test('public themes list is available on its own route', function () {
     $this->get(route('themes.index'))
         ->assertOk()
+        ->assertHeaderMissing('Link')
         ->assertInertia(fn (Assert $page) => $page
             ->component('themes/index'));
 });
