@@ -189,7 +189,7 @@ test('visitors can submit a theme for moderation', function () {
         'notes' => 'Please review this theme.',
         'theme_zip' => new UploadedFile($zipPath, 'aurora.zip', 'application/zip', null, true),
     ])
-        ->assertRedirect(route('themes.index'));
+        ->assertRedirect(route('themes.submitted'));
 
     $submission = ThemeSubmission::query()->firstOrFail();
 
@@ -199,6 +199,12 @@ test('visitors can submit a theme for moderation', function () {
         ->and($submission->status)->toBe('pending');
 
     expect(Storage::disk('local')->exists($submission->archive_path))->toBeTrue();
+
+    $this->get(route('themes.submitted'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('themes/submitted')
+            ->where('officialCatalogUrl', config('app.url').'/themes'));
 });
 
 test('owners can review theme submissions', function () {

@@ -35,6 +35,9 @@ const messages = {
             'Send a theme to the official queue for review before it appears in the catalog.',
         submitThemeFormDescription:
             'Upload a zip file or point to a public URL. The theme will stay hidden until approved.',
+        themeSubmissionReceived: 'Theme submitted',
+        themeSubmissionReceivedDescription:
+            'Your submission is now in the official review queue and will appear after approval.',
         submitThemeZip: 'Theme zip',
         submitThemeUrl: 'Theme zip URL',
         submitThemeSubmitterName: 'Your name',
@@ -166,6 +169,9 @@ const messages = {
             'Skicka ett tema till den officiella kön för granskning innan det syns i katalogen.',
         submitThemeFormDescription:
             'Ladda upp en zip-fil eller ange en publik URL. Temat blir dolt tills det godkänns.',
+        themeSubmissionReceived: 'Temat är inskickat',
+        themeSubmissionReceivedDescription:
+            'Ditt inskick ligger nu i den officiella granskningskön och visas efter godkännande.',
         submitThemeZip: 'Zip-tema',
         submitThemeUrl: 'URL till zip-tema',
         submitThemeSubmitterName: 'Ditt namn',

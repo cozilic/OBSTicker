@@ -27,6 +27,7 @@ if (config('ticker.themes.official_catalog_enabled', false)) {
     Route::get('themes', [TickerThemeController::class, 'index'])->name('themes.index');
     Route::get('themes/submit', [ThemeSubmissionController::class, 'create'])->name('themes.submit');
     Route::post('themes/submissions', [ThemeSubmissionController::class, 'store'])->name('themes.submissions.store');
+    Route::get('themes/submitted', [ThemeSubmissionController::class, 'submitted'])->name('themes.submitted');
     Route::get('themes/{theme}', [TickerThemeController::class, 'show'])->name('themes.show');
 }
 

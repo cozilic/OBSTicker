@@ -82,12 +82,16 @@ class ThemeSubmissionController extends Controller
             'notes' => trim($validated['notes'] ?? '') ?: null,
         ]);
 
-        Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => 'Theme submitted for review.',
-        ]);
+        return redirect()->route('themes.submitted');
+    }
 
-        return redirect()->route('themes.index');
+    public function submitted(): Response
+    {
+        $this->assertOfficialCatalogHost();
+
+        return Inertia::render('themes/submitted', [
+            'officialCatalogUrl' => config('ticker.themes.official_catalog_url', 'https://ticker.norrnet.online/themes'),
+        ]);
     }
 
     public function index(): Response
