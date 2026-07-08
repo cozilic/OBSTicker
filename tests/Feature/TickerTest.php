@@ -1025,7 +1025,7 @@ test('user can stitch custom images into a theme directory', function () {
             'custom_viewport_left' => '24%',
             'custom_viewport_right' => '10%',
         ])
-        ->assertRedirect();
+        ->assertRedirect(route('ticker.themes.index'));
 
     $settings = TickerSetting::current($user);
 
@@ -1055,6 +1055,12 @@ test('user can stitch custom images into a theme directory', function () {
         ->assertJsonPath('settings.custom_label_width', '13.5%')
         ->assertJsonPath('settings.custom_viewport_left', '24%')
         ->assertJsonPath('settings.custom_viewport_right', '10%');
+
+    $this->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'dusk')));
 });
 
 test('stitch failures return a validation error instead of a 500', function () {

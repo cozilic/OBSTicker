@@ -281,7 +281,12 @@ class TickerDashboardController extends Controller
             imagedestroy($rightImg);
             imagedestroy($stitchedImg);
 
-            return redirect()->route('ticker.themes.show', ['theme' => $themeSlug]);
+            Inertia::flash('toast', [
+                'type' => 'success',
+                'message' => "Theme {$themeName} created.",
+            ]);
+
+            return redirect()->route('ticker.themes.index');
         } catch (\Throwable $exception) {
             report($exception);
 
