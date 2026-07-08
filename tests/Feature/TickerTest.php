@@ -131,7 +131,7 @@ test('public themes list is available on its own route', function () {
     $this->get(route('themes.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->component('ticker/themes'));
+            ->component('themes/index'));
 });
 
 test('authenticated users can manage ticker messages', function () {

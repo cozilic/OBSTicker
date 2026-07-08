@@ -19,6 +19,12 @@ class TickerThemeController extends Controller
     {
         $this->assertThemeCatalogEnabled();
 
+        if (request()->routeIs('themes.*')) {
+            return Inertia::render('themes/index', [
+                'themes' => $tickerStyles->paginateDetailed(10),
+            ]);
+        }
+
         return Inertia::render('ticker/themes', [
             'themes' => $tickerStyles->paginateDetailed(10),
             'createThemeUrl' => route('ticker.theme'),
