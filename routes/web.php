@@ -5,6 +5,7 @@ use App\Http\Controllers\ModeratorController;
 use App\Http\Controllers\PublicTickerController;
 use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SubmitterTwitchAuthController;
+use App\Http\Controllers\ThemeSubmissionController;
 use App\Http\Controllers\TickerDashboardController;
 use App\Http\Controllers\TickerMessageController;
 use App\Http\Controllers\TickerSubmissionController;
@@ -23,6 +24,8 @@ Route::get('ticker-admin', TickerDashboardController::class)->name('ticker.dashb
 Route::get('ticker-admin/theme', [TickerDashboardController::class, 'theme'])->name('ticker.theme');
 
 Route::get('themes', [TickerThemeController::class, 'index'])->name('themes.index');
+Route::get('themes/submit', [ThemeSubmissionController::class, 'create'])->name('themes.submit');
+Route::post('themes/submissions', [ThemeSubmissionController::class, 'store'])->name('themes.submissions.store');
 Route::get('themes/{theme}', [TickerThemeController::class, 'show'])->name('themes.show');
 
 Route::get('ticker-admin/themes', [TickerThemeController::class, 'index'])->name('ticker.themes.index');
@@ -35,6 +38,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::post('ticker-admin/themes', [TickerThemeController::class, 'store'])->name('ticker.themes.store');
     Route::delete('ticker-admin/themes/{theme}', [TickerThemeController::class, 'destroy'])->name('ticker.themes.destroy');
+    Route::get('ticker-admin/theme-submissions', [ThemeSubmissionController::class, 'index'])->name('ticker.theme-submissions.index');
+    Route::post('ticker-admin/theme-submissions/{themeSubmission}/approve', [ThemeSubmissionController::class, 'approve'])->name('ticker.theme-submissions.approve');
+    Route::post('ticker-admin/theme-submissions/{themeSubmission}/reject', [ThemeSubmissionController::class, 'reject'])->name('ticker.theme-submissions.reject');
     Route::put('ticker-admin/settings', [TickerDashboardController::class, 'update'])->name('ticker.settings.update');
     Route::post('ticker-admin/settings/stitch', [TickerDashboardController::class, 'stitch'])->name('ticker.settings.stitch');
     Route::post('ticker-admin/messages', [TickerMessageController::class, 'store'])->name('ticker.messages.store');

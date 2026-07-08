@@ -30,6 +30,30 @@ const messages = {
         officialThemesCatalogDescription:
             'Browse the shared catalog and download official themes.',
         openOfficialThemesCatalog: 'Open official catalog',
+        submitTheme: 'Submit theme',
+        submitThemeDescription:
+            'Send a theme to the official queue for review before it appears in the catalog.',
+        submitThemeFormDescription:
+            'Upload a zip file or point to a public URL. The theme will stay hidden until approved.',
+        submitThemeZip: 'Theme zip',
+        submitThemeUrl: 'Theme zip URL',
+        submitThemeSubmitterName: 'Your name',
+        submitThemeSubmitterEmail: 'Your email',
+        submitThemeNotes: 'Notes',
+        submitThemeNotesPlaceholder: 'Optional details for the reviewer.',
+        themeSubmissions: 'Theme submissions',
+        themeSubmissionsDescription:
+            'Moderate incoming theme submissions before they are published.',
+        pending: 'Pending',
+        approved: 'Approved',
+        rejected: 'Rejected',
+        approveSubmission: 'Approve',
+        rejectSubmission: 'Reject',
+        source: 'Source',
+        noSubmissionsPending: 'No submissions are waiting for review.',
+        noPermissionToModerateThemes: 'You do not have permission to moderate themes.',
+        rejectionReasonPrompt: 'Rejection reason (optional)',
+        submittedAt: 'Submitted at',
         done: 'Done',
         latestMessages: 'Latest messages',
         latestMessagesDescription:
@@ -133,6 +157,30 @@ const messages = {
         officialThemesCatalogDescription:
             'Bläddra i den delade samlingen och ladda ner officiella teman.',
         openOfficialThemesCatalog: 'Öppna officiell katalog',
+        submitTheme: 'Skicka in tema',
+        submitThemeDescription:
+            'Skicka ett tema till den officiella kön för granskning innan det syns i katalogen.',
+        submitThemeFormDescription:
+            'Ladda upp en zip-fil eller ange en publik URL. Temat blir dolt tills det godkänns.',
+        submitThemeZip: 'Zip-tema',
+        submitThemeUrl: 'URL till zip-tema',
+        submitThemeSubmitterName: 'Ditt namn',
+        submitThemeSubmitterEmail: 'Din e-post',
+        submitThemeNotes: 'Anteckningar',
+        submitThemeNotesPlaceholder: 'Valfria detaljer för granskaren.',
+        themeSubmissions: 'Temainskick',
+        themeSubmissionsDescription:
+            'Granska inkommande temainskick innan de publiceras.',
+        pending: 'Väntar',
+        approved: 'Godkänd',
+        rejected: 'Avslagen',
+        approveSubmission: 'Godkänn',
+        rejectSubmission: 'Avslå',
+        source: 'Källa',
+        noSubmissionsPending: 'Inga inskick väntar på granskning.',
+        noPermissionToModerateThemes: 'Du har inte behörighet att granska teman.',
+        rejectionReasonPrompt: 'Orsak till avslag (valfritt)',
+        submittedAt: 'Skickad',
         done: 'Klar',
         latestMessages: 'Senaste texter',
         latestMessagesDescription:

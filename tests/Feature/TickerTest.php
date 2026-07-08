@@ -2,12 +2,14 @@
 
 use App\Models\RssFeed;
 use App\Models\SubmissionAccount;
+use App\Models\ThemeSubmission;
 use App\Models\TickerMessage;
 use App\Models\TickerSetting;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 afterEach(function (): void {
@@ -19,6 +21,7 @@ afterEach(function (): void {
     File::deleteDirectory(public_path('ticker-styles/dusk'));
     File::deleteDirectory(public_path('ticker-styles/compiled'));
     File::deleteDirectory(public_path('ticker-theme-shares'));
+    Storage::disk('local')->deleteDirectory('theme-submissions');
     File::delete(public_path('ticker-styles/dusk.png'));
     File::delete(public_path('ticker-styles/dusk.json'));
     File::delete(public_path('ticker-styles/Dusk.png'));
@@ -132,6 +135,75 @@ test('public themes list is available on its own route', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('themes/index'));
+});
+
+test('public visitors can open the theme submission form', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $this->get(route('themes.submit'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('themes/submit')
+            ->where('officialCatalogUrl', config('app.url').'/themes'));
+});
+
+test('visitors can submit a theme for moderation', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $zipPath = createThemeZipFixture('aurora', 'Alex Example');
+
+    $this->post(route('themes.submissions.store'), [
+        'theme_name' => 'Aurora',
+        'author_name' => 'Alex Example',
+        'submitter_name' => 'Patrik',
+        'submitter_email' => 'patrik@example.com',
+        'notes' => 'Please review this theme.',
+        'theme_zip' => new UploadedFile($zipPath, 'aurora.zip', 'application/zip', null, true),
+    ])
+        ->assertRedirect(route('themes.index'));
+
+    $submission = ThemeSubmission::query()->firstOrFail();
+
+    expect($submission->theme_name)->toBe('Aurora')
+        ->and($submission->theme_slug)->toBe('aurora')
+        ->and($submission->author_name)->toBe('Alex Example')
+        ->and($submission->status)->toBe('pending');
+
+    expect(Storage::disk('local')->exists($submission->archive_path))->toBeTrue();
+});
+
+test('owners can review theme submissions', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $owner = User::factory()->create(['role' => 'owner']);
+    $zipPath = createThemeZipFixture('aurora', 'Alex Example');
+
+    $this->post(route('themes.submissions.store'), [
+        'theme_name' => 'Aurora',
+        'author_name' => 'Alex Example',
+        'theme_zip' => new UploadedFile($zipPath, 'aurora.zip', 'application/zip', null, true),
+    ])->assertRedirect(route('themes.index'));
+
+    $submission = ThemeSubmission::query()->firstOrFail();
+
+    $this->actingAs($owner)
+        ->get(route('ticker.theme-submissions.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/theme-submissions')
+            ->where('submissions.data', fn (mixed $items): bool => collect($items)->contains(fn (array $item): bool => $item['theme_slug'] === 'aurora' && $item['status'] === 'pending')));
+
+    $this->actingAs($owner)
+        ->post(route('ticker.theme-submissions.approve', ['themeSubmission' => $submission]))
+        ->assertRedirect();
+
+    $submission->refresh();
+
+    expect($submission->status)->toBe('approved')
+        ->and($submission->published_theme_slug)->toBe('aurora')
+        ->and(File::exists(public_path('ticker-styles/aurora/title.png')))->toBeTrue()
+        ->and(File::exists(public_path('ticker-styles/aurora/aurora.json')))->toBeTrue()
+        ->and(Storage::disk('local')->exists($submission->archive_path))->toBeFalse();
 });
 
 test('authenticated users can manage ticker messages', function () {

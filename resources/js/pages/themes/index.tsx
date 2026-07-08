@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Download, FolderOpen, Link2, LogIn } from 'lucide-react';
+import { Download, FolderOpen, Link2, LogIn, Send } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
@@ -51,9 +51,10 @@ type Props = {
 
 export default function PublicThemes({ themes }: Props) {
     const { t } = useTranslation();
-    const { auth, errors } = usePage<{
+    const { auth, errors, isOfficialCatalogHost } = usePage<{
         auth: { user: { id: number } | null };
         errors: Record<string, string>;
+        isOfficialCatalogHost: boolean;
     }>().props;
     const [themeImportUrl, setThemeImportUrl] = useState('');
     const canImportThemes = auth.user !== null;
@@ -150,6 +151,30 @@ export default function PublicThemes({ themes }: Props) {
                                         {t('importThemeFromUrl')}
                                     </Button>
                                 </form>
+                            </CardContent>
+                        </Card>
+                    </section>
+                ) : null}
+
+                {isOfficialCatalogHost ? (
+                    <section className="mx-auto w-full max-w-6xl px-5 pb-8">
+                        <Card className="rounded-lg border-cyan-300/20 bg-cyan-300/5">
+                            <CardHeader>
+                                <CardTitle>{t('submitTheme')}</CardTitle>
+                                <CardDescription>
+                                    {t('submitThemeDescription')}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="flex flex-wrap items-center gap-3">
+                                <p className="max-w-2xl text-sm text-neutral-300">
+                                    {t('submitThemeFormDescription')}
+                                </p>
+                                <Button asChild className="ml-auto">
+                                    <Link href="/themes/submit">
+                                        <Send />
+                                        {t('submitTheme')}
+                                    </Link>
+                                </Button>
                             </CardContent>
                         </Card>
                     </section>

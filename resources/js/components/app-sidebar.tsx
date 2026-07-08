@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { FolderOpen, LayoutGrid, RadioTower } from 'lucide-react';
+import { FolderOpen, Inbox, LayoutGrid, RadioTower } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -41,11 +41,16 @@ const tickerNavItems: NavItem[] = [
         href: '/ticker-admin/theme',
         icon: RadioTower,
     },
+    {
+        title: 'Theme submissions',
+        href: '/ticker-admin/theme-submissions',
+        icon: Inbox,
+    },
 ];
 
 const translateNavItems = (
     items: NavItem[],
-    t: (key: 'overview' | 'ticker' | 'themes' | 'createTheme') => string,
+    t: (key: 'overview' | 'ticker' | 'themes' | 'createTheme' | 'themeSubmissions') => string,
 ) =>
     items.map((item) => ({
         ...item,
@@ -58,12 +63,17 @@ const translateNavItems = (
                     ? t('themes')
                   : item.title === 'Create theme'
                     ? t('createTheme')
+                  : item.title === 'Theme submissions'
+                    ? t('themeSubmissions')
                     : item.title,
     }));
 
 export function AppSidebar() {
     const { t } = useTranslation();
-    const { features } = usePage<{ features: { themeCatalogEnabled: boolean } }>().props;
+    const { features, canModerateThemes } = usePage<{
+        features: { themeCatalogEnabled: boolean };
+        canModerateThemes: boolean;
+    }>().props;
     const translatedPlatformNavItems = translateNavItems(platformNavItems, t);
     const translatedTickerNavItems = translateNavItems(
         tickerNavItems.filter((item) =>
@@ -71,6 +81,9 @@ export function AppSidebar() {
         ),
         t,
     );
+    const filteredTickerNavItems = canModerateThemes
+        ? translatedTickerNavItems
+        : translatedTickerNavItems.filter((item) => item.title !== t('themeSubmissions'));
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -88,7 +101,7 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain label={t('platform')} items={translatedPlatformNavItems} />
-                <NavMain label={t('ticker')} items={translatedTickerNavItems} />
+                <NavMain label={t('ticker')} items={filteredTickerNavItems} />
             </SidebarContent>
 
             <SidebarFooter>

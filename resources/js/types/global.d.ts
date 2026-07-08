@@ -13,6 +13,9 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            canModerateThemes: boolean;
+            themeCatalogUrl: string;
+            isOfficialCatalogHost: boolean;
             [key: string]: unknown;
         };
     }
