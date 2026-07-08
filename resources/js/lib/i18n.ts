@@ -26,6 +26,10 @@ const messages = {
         createThemeTutorialStep6: '6. Save the theme name in the form and click Stitch & apply theme.',
         createThemeTutorialNote:
             'The theme will appear in Ticker theme when the JSON filename and Theme_name match.',
+        officialThemesCatalog: 'Official themes catalog',
+        officialThemesCatalogDescription:
+            'Browse the shared catalog and download official themes.',
+        openOfficialThemesCatalog: 'Open official catalog',
         done: 'Done',
         latestMessages: 'Latest messages',
         latestMessagesDescription:
@@ -125,6 +129,10 @@ const messages = {
         createThemeTutorialStep6: '6. Skriv in temats namn i formuläret och klicka Sy ihop och använd tema.',
         createThemeTutorialNote:
             'Temat visas i Ticker theme när JSON-filens namn och Theme_name matchar.',
+        officialThemesCatalog: 'Officiell temasamling',
+        officialThemesCatalogDescription:
+            'Bläddra i den delade samlingen och ladda ner officiella teman.',
+        openOfficialThemesCatalog: 'Öppna officiell katalog',
         done: 'Klar',
         latestMessages: 'Senaste texter',
         latestMessagesDescription:

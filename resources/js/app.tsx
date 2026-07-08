@@ -14,6 +14,8 @@ createInertiaApp({
         switch (true) {
             case name === 'welcome':
                 return null;
+            case name.startsWith('themes/'):
+                return null;
             case name === 'ticker/show':
                 return null;
             case name === 'ticker/submit':

@@ -231,6 +231,8 @@ test('themes page lists imported themes and supports deletion', function () {
             ->component('ticker/themes')
             ->where('createThemeUrl', route('ticker.theme'))
             ->where('features.themeCatalogEnabled', true)
+            ->where('features.themeOfficialCatalogLinkEnabled', true)
+            ->where('themeCatalogUrl', 'https://ticker.norrnet.online/themes')
             ->where('themes.meta.current_page', 1)
             ->where('themes.meta.per_page', 10)
             ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'aurora' && $theme['label'] === 'Aurora' && $theme['author'] === 'Alex Example' && $theme['downloadUrl'] === route('ticker.themes.share.download', ['theme' => 'aurora']))));

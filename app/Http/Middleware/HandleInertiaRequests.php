@@ -35,6 +35,9 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $officialCatalogUrl = config('ticker.themes.official_catalog_url', 'https://ticker.norrnet.online/themes');
+        $officialCatalogHost = parse_url($officialCatalogUrl, PHP_URL_HOST);
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -44,7 +47,10 @@ class HandleInertiaRequests extends Middleware
             'features' => [
                 'themeCatalogEnabled' => config('ticker.themes.catalog_enabled', true),
                 'themeLandingLinkEnabled' => config('ticker.themes.landing_link_enabled', false),
+                'themeOfficialCatalogLinkEnabled' => $officialCatalogHost !== null
+                    && $request->getHost() !== $officialCatalogHost,
             ],
+            'themeCatalogUrl' => $officialCatalogUrl,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

@@ -93,8 +93,10 @@ const shareProgressKeys = [
 
 export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const { t } = useTranslation();
-    const { auth, errors } = usePage<{
+    const { auth, errors, features, themeCatalogUrl } = usePage<{
         auth: { user: { id: number } | null };
+        features: { themeOfficialCatalogLinkEnabled: boolean };
+        themeCatalogUrl: string;
         errors: Record<string, string>;
     }>().props;
     const canManageThemes = auth.user !== null;
@@ -222,6 +224,24 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
             <Head title={t('themes')} />
             <div className="flex flex-1 flex-col gap-4 p-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)]">
                 <aside className="space-y-4">
+                    {features.themeOfficialCatalogLinkEnabled ? (
+                        <Card className="rounded-lg border-cyan-300/20 bg-cyan-300/5">
+                            <CardHeader>
+                                <CardTitle>{t('officialThemesCatalog')}</CardTitle>
+                                <CardDescription>
+                                    {t('officialThemesCatalogDescription')}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Button asChild variant="outline" className="w-full justify-start">
+                                    <a href={themeCatalogUrl} target="_blank" rel="noreferrer">
+                                        {t('openOfficialThemesCatalog')}
+                                    </a>
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    ) : null}
+
                     <Card className="h-fit rounded-lg">
                         <CardHeader>
                             <CardTitle>{t('themes')}</CardTitle>
