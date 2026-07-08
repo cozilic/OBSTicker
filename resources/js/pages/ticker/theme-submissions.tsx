@@ -53,7 +53,11 @@ type Props = {
 
 export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Props) {
     const { t } = useTranslation();
-    const { canModerateThemes } = usePage<{ canModerateThemes: boolean }>().props;
+    const { canModerateThemes, features } = usePage<{
+        canModerateThemes: boolean;
+        features: { themeOfficialCatalogEnabled: boolean };
+    }>().props;
+    const canModerateOfficialThemes = canModerateThemes && features.themeOfficialCatalogEnabled;
 
     const handleApprove = (submission: Submission) => {
         router.post(`/ticker-admin/theme-submissions/${submission.id}/approve`, {}, {
@@ -106,7 +110,16 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
                     </Button>
                 </div>
 
-                {!canModerateThemes ? (
+                {!features.themeOfficialCatalogEnabled ? (
+                    <Card className="rounded-lg">
+                        <CardHeader>
+                            <CardTitle>{t('themeSubmissions')}</CardTitle>
+                            <CardDescription>
+                                {t('officialThemesOnly')}
+                            </CardDescription>
+                        </CardHeader>
+                    </Card>
+                ) : !canModerateOfficialThemes ? (
                     <Card className="rounded-lg">
                         <CardHeader>
                             <CardTitle>{t('themeSubmissions')}</CardTitle>
@@ -194,7 +207,7 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
                                     <div className="flex flex-wrap gap-2">
                                         <Button
                                             type="button"
-                                            disabled={submission.status !== 'pending'}
+                                            disabled={submission.status !== 'pending' || !canModerateOfficialThemes}
                                             onClick={() => handleApprove(submission)}
                                         >
                                             <Check />
@@ -203,7 +216,7 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
                                         <Button
                                             type="button"
                                             variant="outline"
-                                            disabled={submission.status !== 'pending'}
+                                            disabled={submission.status !== 'pending' || !canModerateOfficialThemes}
                                             onClick={() => handleReject(submission)}
                                             >
                                             <X />
@@ -213,6 +226,7 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
                                             <Button
                                                 type="button"
                                                 variant="destructive"
+                                                disabled={!canModerateOfficialThemes}
                                                 onClick={() => handleDelete(submission)}
                                             >
                                                 <Trash2 />

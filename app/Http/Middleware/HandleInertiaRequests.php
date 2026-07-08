@@ -48,6 +48,7 @@ class HandleInertiaRequests extends Middleware
             ],
             'features' => [
                 'themeCatalogEnabled' => config('ticker.themes.catalog_enabled', true),
+                'themeOfficialCatalogEnabled' => $officialCatalogEnabled,
                 'themeLandingLinkEnabled' => $officialCatalogEnabled
                     && config('ticker.themes.landing_link_enabled', false),
                 'themeOfficialCatalogLinkEnabled' => $officialCatalogEnabled
