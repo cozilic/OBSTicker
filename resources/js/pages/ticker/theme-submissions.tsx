@@ -56,7 +56,9 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
     const { canModerateThemes } = usePage<{ canModerateThemes: boolean }>().props;
 
     const handleApprove = (submission: Submission) => {
-        router.post(`/ticker-admin/theme-submissions/${submission.id}/approve`);
+        router.post(`/ticker-admin/theme-submissions/${submission.id}/approve`, {}, {
+            onSuccess: () => router.flushAll(),
+        });
     };
 
     const handleReject = (submission: Submission) => {
@@ -64,6 +66,8 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
 
         router.post(`/ticker-admin/theme-submissions/${submission.id}/reject`, {
             rejection_reason: reason ?? '',
+        }, {
+            onSuccess: () => router.flushAll(),
         });
     };
 

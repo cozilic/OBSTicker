@@ -137,6 +137,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
 
         setIsImportingUrl(true);
         router.post(themesRoutes.store.url(), { theme_url: value }, {
+            onSuccess: () => router.flushAll(),
             onFinish: () => setIsImportingUrl(false),
         });
     };
@@ -155,6 +156,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
 
         router.post(themesRoutes.store.url(), formData, {
             forceFormData: true,
+            onSuccess: () => router.flushAll(),
             onFinish: () => setIsUploading(false),
         });
     };
@@ -163,6 +165,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
         setImportingThemeSlug(theme.slug);
 
         router.post(themesRoutes.store.url(), { theme_url: theme.downloadUrl }, {
+            onSuccess: () => router.flushAll(),
             onFinish: () => setImportingThemeSlug(null),
         });
     };

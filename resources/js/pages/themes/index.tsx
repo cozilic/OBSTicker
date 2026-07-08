@@ -66,7 +66,9 @@ export default function PublicThemes({ themes }: Props) {
             return;
         }
 
-        router.post(tickerThemesRoutes.store.url(), { theme_url: value });
+        router.post(tickerThemesRoutes.store.url(), { theme_url: value }, {
+            onSuccess: () => router.flushAll(),
+        });
     };
 
     return (
