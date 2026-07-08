@@ -5,8 +5,97 @@ use App\Models\SubmissionAccount;
 use App\Models\TickerMessage;
 use App\Models\TickerSetting;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
+
+afterEach(function (): void {
+    File::delete(public_path('ticker-styles/scoreboard.png'));
+    File::delete(public_path('ticker-styles/ticker.PNG'));
+    File::delete(public_path('ticker-styles/aurora.png'));
+    File::delete(public_path('ticker-styles/aurora.json'));
+    File::deleteDirectory(public_path('ticker-styles/aurora'));
+    File::deleteDirectory(public_path('ticker-styles/dusk'));
+    File::deleteDirectory(public_path('ticker-styles/compiled'));
+    File::deleteDirectory(public_path('ticker-theme-shares'));
+    File::delete(public_path('ticker-styles/dusk.png'));
+    File::delete(public_path('ticker-styles/dusk.json'));
+    File::delete(public_path('ticker-styles/Dusk.png'));
+    File::delete(public_path('ticker-styles/Dusk.json'));
+    File::delete(public_path('ticker-styles/Dusk/Dusk.json'));
+    File::deleteDirectory(public_path('ticker-styles/Dusk'));
+    File::delete('/tmp/theme-upload.zip');
+});
+
+function createTickerStyleFixture(string $filename = 'scoreboard.png'): string
+{
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', true);
+
+    if (! is_string($png)) {
+        throw new RuntimeException('Unable to create ticker style fixture.');
+    }
+
+    File::ensureDirectoryExists(public_path('ticker-styles'));
+    File::put(public_path('ticker-styles/'.$filename), $png);
+
+    return $filename;
+}
+
+function createTickerThemeFixture(string $directory = 'dusk'): string
+{
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', true);
+
+    if (! is_string($png)) {
+        throw new RuntimeException('Unable to create ticker theme fixture.');
+    }
+
+    $themeDir = public_path('ticker-styles/'.$directory);
+    File::ensureDirectoryExists($themeDir);
+    File::put($themeDir.'/title.png', $png);
+    File::put($themeDir.'/content.png', $png);
+    File::put($themeDir.'/end.png', $png);
+    File::put($themeDir.'/'.$directory.'.json', json_encode([
+        'name' => 'Dusk',
+        'theme_name' => $directory,
+        'author' => 'Fixture Author',
+        'created_at' => '2026-07-07 00:00:00',
+    ], JSON_PRETTY_PRINT));
+
+    return $directory.'.png';
+}
+
+function createThemeZipFixture(string $themeName = 'aurora', string $author = 'Aggen'): string
+{
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', true);
+
+    if (! is_string($png)) {
+        throw new RuntimeException('Unable to create theme zip fixture.');
+    }
+
+    $zipPath = '/tmp/theme-upload.zip';
+    if (is_file($zipPath)) {
+        File::delete($zipPath);
+    }
+
+    $zip = new ZipArchive;
+    if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException('Unable to open theme zip fixture.');
+    }
+
+    $zip->addFromString('title.PNG', $png);
+    $zip->addFromString('content.png', $png);
+    $zip->addFromString('end.png', $png);
+    $zip->addFromString($themeName.'.json', json_encode([
+        'name' => 'Aurora',
+        'theme_name' => $themeName,
+        'author' => $author,
+        'created_at' => '2026-07-07 00:00:00',
+    ], JSON_PRETTY_PRINT));
+    $zip->close();
+
+    return $zipPath;
+}
 
 test('ticker admin redirects to registration before the first admin exists', function () {
     $this->get(route('ticker.dashboard'))
@@ -43,6 +132,7 @@ test('authenticated users can manage ticker messages', function () {
 });
 
 test('ticker dashboard exposes owner specific links', function () {
+    $style = createTickerThemeFixture('dusk');
     $user = User::factory()->create();
 
     $this->actingAs($user)
@@ -50,8 +140,146 @@ test('ticker dashboard exposes owner specific links', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('ticker/dashboard')
+            ->where('settings.ticker_use_image_style', true)
             ->where('tickerUrl', route('ticker.show', ['uuid' => $user->ticker_uuid]))
-            ->where('submitUrl', route('ticker.submit', ['uuid' => $user->ticker_uuid])));
+            ->where('submitUrl', route('ticker.submit', ['uuid' => $user->ticker_uuid]))
+            ->where('tickerStyles', fn (mixed $styles): bool => collect($styles)->contains(fn (array $styleOption): bool => $styleOption['value'] === $style && $styleOption['label'] === 'Dusk' && $styleOption['url'] === '/ticker-styles/compiled/dusk.png') && ! collect($styles)->contains(fn (array $styleOption): bool => $styleOption['value'] === 'ticker.PNG')));
+});
+
+test('ticker theme page is accessible to authenticated users', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('ticker.theme'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/theme'));
+});
+
+test('themes page lists imported themes and supports deletion', function () {
+    $user = User::factory()->create();
+    $zipPath = createThemeZipFixture('aurora', 'Alex Example');
+
+    $this->actingAs($user)
+        ->post(route('ticker.themes.store'), [
+            'theme_zip' => new UploadedFile($zipPath, 'aurora.zip', 'application/zip', null, true),
+        ])
+        ->assertRedirect(route('ticker.themes.show', ['theme' => 'aurora']));
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.show', ['theme' => 'aurora']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/theme-preview')
+            ->where('theme.slug', 'aurora')
+            ->where('theme.label', 'Aurora')
+            ->where('theme.author', 'Alex Example'));
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/themes')
+            ->where('createThemeUrl', route('ticker.theme'))
+            ->where('features.themeCatalogEnabled', true)
+            ->where('themes', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'aurora' && $theme['label'] === 'Aurora' && $theme['author'] === 'Alex Example')));
+
+    TickerSetting::current($user)->update([
+        'ticker_style' => 'aurora.png',
+        'ticker_use_image_style' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('ticker.themes.destroy', ['theme' => 'aurora']))
+        ->assertRedirect();
+
+    expect(File::exists(public_path('ticker-styles/aurora')))->toBeFalse()
+        ->and(File::exists(public_path('ticker-styles/compiled/aurora.png')))->toBeFalse()
+        ->and(File::exists(public_path('ticker-styles/compiled/aurora.json')))->toBeFalse()
+        ->and(File::exists(public_path('ticker-styles/aurora.png')))->toBeFalse()
+        ->and(File::exists(public_path('ticker-styles/aurora.json')))->toBeFalse();
+
+    $settings = TickerSetting::current($user);
+    expect($settings->ticker_style)->toBeNull()
+        ->and($settings->ticker_use_image_style)->toBeFalse();
+});
+
+test('themes can be shared and imported from a url', function () {
+    $user = User::factory()->create();
+    $zipPath = createThemeZipFixture('aurora', 'Alex Example');
+
+    $this->actingAs($user)
+        ->post(route('ticker.themes.store'), [
+            'theme_zip' => new UploadedFile($zipPath, 'aurora.zip', 'application/zip', null, true),
+        ])
+        ->assertRedirect(route('ticker.themes.show', ['theme' => 'aurora']));
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.share', ['theme' => 'aurora']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/theme-share')
+            ->where('theme.slug', 'aurora')
+            ->where('theme.label', 'Aurora')
+            ->where('theme.author', 'Alex Example')
+            ->where('generateShareUrlAction', route('ticker.themes.share.url', ['theme' => 'aurora']))
+            ->where('shareUrl', null));
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.share.download', ['theme' => 'aurora']))
+        ->assertDownload('aurora.zip');
+
+    $this->actingAs($user)
+        ->post(route('ticker.themes.share.url', ['theme' => 'aurora']))
+        ->assertRedirect(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => '/ticker-theme-shares/aurora.zip']));
+
+    $this->actingAs($user)
+        ->postJson(route('ticker.themes.share.url', ['theme' => 'aurora']))
+        ->assertOk()
+        ->assertJson([
+            'share_url' => '/ticker-theme-shares/aurora.zip',
+        ]);
+
+    expect(File::exists(public_path('ticker-theme-shares/aurora.zip')))->toBeTrue();
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => '/ticker-theme-shares/aurora.zip']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/theme-share')
+            ->where('shareUrl', '/ticker-theme-shares/aurora.zip'));
+
+    Http::fake([
+        'https://example.test/themes/aurora.zip' => Http::response(
+            File::get($zipPath),
+            200,
+            ['Content-Type' => 'application/zip'],
+        ),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('ticker.themes.store'), [
+            'theme_url' => 'https://example.test/themes/aurora.zip',
+        ])
+        ->assertRedirect(route('ticker.themes.show', ['theme' => 'aurora']));
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.show', ['theme' => 'aurora']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ticker/theme-preview')
+            ->where('theme.slug', 'aurora')
+            ->where('theme.label', 'Aurora')
+            ->where('theme.author', 'Alex Example'));
+});
+
+test('theme catalog routes can be disabled per deployment', function () {
+    config(['ticker.themes.catalog_enabled' => false]);
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.index'))
+        ->assertNotFound();
 });
 
 test('dashboard exposes owner specific submit link', function () {
@@ -252,6 +480,7 @@ test('public ticker submissions use the submitter name as label', function () {
 });
 
 test('public ticker payload prioritizes queued user text over rss', function () {
+    $style = createTickerStyleFixture();
     $owner = User::factory()->create();
 
     Http::fake([
@@ -262,7 +491,10 @@ test('public ticker payload prioritizes queued user text over rss', function () 
         ),
     ]);
 
-    TickerSetting::current($owner)->update(['headline' => 'OBS']);
+    TickerSetting::current($owner)->update([
+        'headline' => 'OBS',
+        'ticker_style' => $style,
+    ]);
     TickerMessage::factory()->create([
         'owner_id' => $owner->id,
         'source_label' => 'Manuell',
@@ -285,6 +517,9 @@ test('public ticker payload prioritizes queued user text over rss', function () 
         ->assertJsonPath('settings.canvas_height', 1080)
         ->assertJsonPath('settings.animation_style', 'slide-left')
         ->assertJsonPath('settings.animation_duration_seconds', 1)
+        ->assertJsonPath('settings.ticker_style', $style)
+        ->assertJsonPath('settings.ticker_style_url', '/ticker-styles/scoreboard.png')
+        ->assertJsonPath('settings.ticker_use_image_style', true)
         ->assertJsonPath('settings.label_position', 'left')
         ->assertJsonPath('settings.chroma_key_color', 'green')
         ->assertJsonPath('items.0.text', 'Direkt från webben')
@@ -301,6 +536,8 @@ test('ticker settings default to english', function () {
     expect($settings->headline)->toBe('Latest news')
         ->and($settings->rss_headline)->toBe('Latest news')
         ->and($settings->user_headline)->toBe('Latest text')
+        ->and($settings->ticker_style)->toBeNull()
+        ->and($settings->ticker_use_image_style)->toBeTrue()
         ->and($settings->moderator_only_submissions)->toBeFalse();
 });
 
@@ -412,6 +649,7 @@ test('queued text preempts rss playback immediately', function () {
 });
 
 test('ticker settings can be updated', function () {
+    $style = createTickerStyleFixture();
     $user = User::factory()->create();
 
     $this->actingAs($user)
@@ -428,6 +666,8 @@ test('ticker settings can be updated', function () {
             'animation_out_duration_seconds' => 3,
             'animation_style' => 'fade',
             'shape_style' => 'pill',
+            'ticker_style' => $style,
+            'ticker_use_image_style' => '0',
             'label_position' => 'right',
             'chroma_key_color' => 'blue',
             'image_url' => 'https://example.com/logo.png',
@@ -450,6 +690,8 @@ test('ticker settings can be updated', function () {
         ->and($settings->animation_out_duration_seconds)->toBe(3)
         ->and($settings->animation_style)->toBe('fade')
         ->and($settings->shape_style)->toBe('pill')
+        ->and($settings->ticker_style)->toBe($style)
+        ->and($settings->ticker_use_image_style)->toBeFalse()
         ->and($settings->label_position)->toBe('right')
         ->and($settings->chroma_key_color)->toBe('blue')
         ->and($settings->image_url)->toBe('https://example.com/logo.png')
@@ -457,6 +699,7 @@ test('ticker settings can be updated', function () {
         ->and($settings->show_rss)->toBeFalse()
         ->and($settings->crawl_duration_seconds)->toBe(45)
         ->and($settings->message_display_seconds)->toBe(15);
+
 });
 
 test('owners can add moderators', function () {
@@ -486,4 +729,57 @@ test('moderators cannot add moderators', function () {
             'password_confirmation' => 'password123',
         ])
         ->assertForbidden();
+});
+
+test('user can stitch custom images into a theme directory', function () {
+    $user = User::factory()->create();
+
+    $dummyPng = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', true);
+
+    $titleFile = UploadedFile::fake()->createWithContent('title.png', $dummyPng);
+    $contentFile = UploadedFile::fake()->createWithContent('content.png', $dummyPng);
+    $endFile = UploadedFile::fake()->createWithContent('end.png', $dummyPng);
+
+    $this->actingAs($user)
+        ->post(route('ticker.settings.stitch'), [
+            'theme_name' => 'Dusk',
+            'author_name' => 'Patrik Forsberg',
+            'title_image' => $titleFile,
+            'content_image' => $contentFile,
+            'end_image' => $endFile,
+            'custom_label_left' => '0%',
+            'custom_label_width' => '13.5%',
+            'custom_viewport_left' => '24%',
+            'custom_viewport_right' => '10%',
+        ])
+        ->assertRedirect();
+
+    $settings = TickerSetting::current($user);
+
+    expect($settings->ticker_style)->toBe('dusk.png');
+    expect($settings->ticker_use_image_style)->toBeTrue();
+    expect($settings->custom_label_left)->toBe('0%');
+    expect($settings->custom_label_width)->toBe('13.5%');
+    expect($settings->custom_viewport_left)->toBe('24%');
+    expect($settings->custom_viewport_right)->toBe('10%');
+
+    expect(File::exists(public_path('ticker-styles/dusk/title.png')))->toBeTrue();
+    expect(File::exists(public_path('ticker-styles/dusk/content.png')))->toBeTrue();
+    expect(File::exists(public_path('ticker-styles/dusk/end.png')))->toBeTrue();
+    expect(File::exists(public_path('ticker-styles/dusk/dusk.json')))->toBeTrue();
+    expect(File::exists(public_path('ticker-styles/compiled/dusk.png')))->toBeTrue();
+    expect(File::exists(public_path('ticker-styles/compiled/dusk.json')))->toBeTrue();
+
+    $meta = json_decode((string) File::get(public_path('ticker-styles/dusk/dusk.json')), true);
+    expect($meta)->toHaveKeys(['name', 'theme_name', 'author', 'created_at', 'custom_label_left', 'custom_label_width', 'custom_viewport_left', 'custom_viewport_right']);
+
+    $this->getJson(route('ticker.payload', ['uuid' => $user->ticker_uuid]))
+        ->assertSuccessful()
+        ->assertJsonPath('settings.ticker_style', 'dusk.png')
+        ->assertJsonPath('settings.ticker_style_url', '/ticker-styles/compiled/dusk.png')
+        ->assertJsonPath('settings.ticker_use_image_style', true)
+        ->assertJsonPath('settings.custom_label_left', '0%')
+        ->assertJsonPath('settings.custom_label_width', '13.5%')
+        ->assertJsonPath('settings.custom_viewport_left', '24%')
+        ->assertJsonPath('settings.custom_viewport_right', '10%');
 });

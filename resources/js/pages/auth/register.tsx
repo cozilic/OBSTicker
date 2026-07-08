@@ -14,7 +14,10 @@ type Props = {
     isFirstAdminSetup?: boolean;
 };
 
-export default function Register({ passwordRules, isFirstAdminSetup = false }: Props) {
+export default function Register({
+    passwordRules,
+    isFirstAdminSetup = false,
+}: Props) {
     return (
         <>
             <Head title={isFirstAdminSetup ? 'Create admin' : 'Register'} />
@@ -98,7 +101,9 @@ export default function Register({ passwordRules, isFirstAdminSetup = false }: P
                                 data-test="register-user-button"
                             >
                                 {processing && <Spinner />}
-                                {isFirstAdminSetup ? 'Create admin account' : 'Create account'}
+                                {isFirstAdminSetup
+                                    ? 'Create admin account'
+                                    : 'Create account'}
                             </Button>
                         </div>
 
@@ -117,5 +122,6 @@ export default function Register({ passwordRules, isFirstAdminSetup = false }: P
 
 Register.layout = {
     title: 'Create your ticker account',
-    description: 'Register to get your own OBS ticker admin panel and public links.',
+    description:
+        'Register to get your own OBS ticker admin panel and public links.',
 };

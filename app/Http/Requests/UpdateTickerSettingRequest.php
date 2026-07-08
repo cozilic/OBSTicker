@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Services\TickerStyleRepository;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -36,6 +38,8 @@ class UpdateTickerSettingRequest extends FormRequest
             'animation_duration_seconds' => ['required', 'integer', 'min:1', 'max:10'],
             'animation_out_duration_seconds' => ['required', 'integer', 'min:1', 'max:10'],
             'shape_style' => ['required', Rule::in(['bar', 'pill', 'angled'])],
+            'ticker_style' => ['nullable', 'string', 'max:255', $this->tickerStyleRule()],
+            'ticker_use_image_style' => ['sometimes', 'boolean'],
             'label_position' => ['required', Rule::in(['left', 'right'])],
             'chroma_key_color' => ['required', Rule::in(['green', 'blue', 'magenta'])],
             'image_url' => ['nullable', 'url', 'max:2048'],
@@ -46,5 +50,18 @@ class UpdateTickerSettingRequest extends FormRequest
             'moderator_only_submissions' => ['sometimes', 'boolean'],
             'show_rss' => ['sometimes', 'boolean'],
         ];
+    }
+
+    private function tickerStyleRule(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            if ($value === null || $value === '' || in_array($value, ['__default', '__none'], true)) {
+                return;
+            }
+
+            if (! is_string($value) || ! app(TickerStyleRepository::class)->exists($value)) {
+                $fail('The selected ticker style is invalid.');
+            }
+        };
     }
 }

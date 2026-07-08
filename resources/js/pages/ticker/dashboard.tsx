@@ -1,5 +1,6 @@
 import { Form, Head } from '@inertiajs/react';
 import {
+    ChevronDown,
     Copy,
     ExternalLink,
     Plus,
@@ -7,6 +8,8 @@ import {
     Trash2,
     Users,
 } from 'lucide-react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -16,6 +19,11 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -26,6 +34,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { useTranslation } from '@/lib/i18n';
 import { fitTextToWidth } from '@/lib/text';
 import { dashboard as tickerDashboard } from '@/routes/ticker';
 import {
@@ -73,6 +82,8 @@ type TickerSettings = {
     animation_duration_seconds: number;
     animation_out_duration_seconds: number;
     shape_style: 'bar' | 'pill' | 'angled';
+    ticker_style: string | null;
+    ticker_use_image_style: boolean;
     label_position: 'left' | 'right';
     chroma_key_color: 'green' | 'blue' | 'magenta';
     image_url: string | null;
@@ -95,9 +106,46 @@ type Props = {
         role: 'owner' | 'moderator';
     }[];
     canManageModerators: boolean;
+    tickerStyles: {
+        value: string;
+        label: string;
+        url: string;
+    }[];
     tickerUrl: string;
     submitUrl: string;
 };
+
+function SettingsSection({
+    title,
+    description,
+    defaultOpen = false,
+    children,
+}: {
+    title: string;
+    description: string;
+    defaultOpen?: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <Collapsible
+            defaultOpen={defaultOpen}
+            className="rounded-lg border bg-card"
+        >
+            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+                <span className="min-w-0">
+                    <span className="block text-sm font-medium">{title}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {description}
+                    </span>
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="border-t px-4 py-4">
+                <div className="grid gap-4">{children}</div>
+            </CollapsibleContent>
+        </Collapsible>
+    );
+}
 
 export default function TickerDashboard({
     messages,
@@ -105,10 +153,15 @@ export default function TickerDashboard({
     settings,
     moderators,
     canManageModerators,
+    tickerStyles,
     tickerUrl,
     submitUrl,
 }: Props) {
+    const { t } = useTranslation();
     const [, copyToClipboard] = useClipboard();
+    const [selectedTickerStyleValue, setSelectedTickerStyleValue] = useState(
+        settings.ticker_style ?? '__none',
+    );
     const queuedMessages = messages.filter(
         (message) => message.status === 'queued',
     ).length;
@@ -116,7 +169,13 @@ export default function TickerDashboard({
         (message) => message.status === 'playing',
     );
     const chromaTickerUrl = `${tickerUrl}${tickerUrl.includes('?') ? '&' : '?'}chroma=1`;
-    const hasPreviewImage = Boolean(settings.image_url);
+    const selectedTickerStyle = tickerStyles.find(
+        (style) => style.value === selectedTickerStyleValue,
+    );
+    const hasThemeSkin = selectedTickerStyleValue !== '__none';
+    const previewTickerSkinUrl =
+        selectedTickerStyle?.url ?? '/images/default-ticker.png';
+    const hasPreviewImage = !hasThemeSkin && Boolean(settings.image_url);
     const previewLabelIsRight = settings.label_position === 'right';
     const previewHeadline = playingMessage
         ? settings.user_headline
@@ -623,53 +682,72 @@ export default function TickerDashboard({
                                     Copy submission link
                                 </Button>
                             </div>
-                            <div className="overflow-hidden rounded-lg border bg-neutral-950 p-4">
-                                <div
-                                    className={[
-                                        'grid min-h-16 overflow-hidden shadow-xl',
-                                        previewColumns,
-                                        settings.shape_style === 'pill'
-                                            ? 'rounded-full'
-                                            : 'rounded-md',
-                                        settings.shape_style === 'angled'
-                                            ? '[clip-path:polygon(0_0,97%_0,100%_100%,0_100%)]'
-                                            : '',
-                                    ].join(' ')}
-                                    style={{
-                                        backgroundColor:
-                                            settings.background_color,
-                                        color: settings.text_color,
-                                    }}
-                                >
-                                    {settings.image_url && (
-                                        <div
-                                            className={`row-start-1 flex items-center justify-center bg-white/10 p-2 ${previewImageColumn}`}
-                                        >
-                                            <img
-                                                src={settings.image_url}
-                                                alt=""
-                                                className="max-h-10 max-w-12 object-contain"
-                                            />
-                                        </div>
-                                    )}
+                            <div className="space-y-2">
+                                <div>
+                                    <p className="text-sm font-medium">
+                                        Preview
+                                    </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Shows either the selected skin or the
+                                            color-based layout, plus the current
+                                            message content.
+                                        </p>
+                                    </div>
+                                <div className="overflow-hidden rounded-lg border bg-neutral-950 p-4">
                                     <div
-                                        className={`row-start-1 flex min-w-0 items-center justify-center overflow-hidden px-4 text-sm font-bold uppercase ${previewLabelColumn}`}
-                                        style={{
-                                            backgroundColor:
-                                                settings.accent_color,
-                                            color: settings.background_color,
-                                            fontSize: `${previewHeadlineFontSize}px`,
+                                            className={[
+                                                'grid min-h-16 overflow-hidden shadow-xl',
+                                                previewColumns,
+                                            settings.shape_style === 'pill'
+                                                ? 'rounded-full'
+                                                : 'rounded-md',
+                                            settings.shape_style === 'angled'
+                                                ? '[clip-path:polygon(0_0,97%_0,100%_100%,0_100%)]'
+                                                : '',
+                                        ].join(' ')}
+                                            style={{
+                                                backgroundColor: hasThemeSkin
+                                                    ? 'transparent'
+                                                    : settings.background_color,
+                                                backgroundImage: hasThemeSkin
+                                                    ? `url("${previewTickerSkinUrl}")`
+                                                    : undefined,
+                                                backgroundPosition: 'center 52%',
+                                                backgroundRepeat: 'no-repeat',
+                                                backgroundSize: '100% auto',
+                                                color: settings.text_color,
                                         }}
                                     >
-                                        <span>{previewHeadline}</span>
-                                    </div>
-                                    <div
-                                        className={`row-start-1 flex min-w-0 items-center px-4 text-sm font-semibold ${previewTextColumn}`}
-                                    >
-                                        <span className="truncate">
-                                            {playingMessage?.content ??
-                                                'RSS headline shown when the queue is empty'}
-                                        </span>
+                                        {hasPreviewImage && (
+                                            <div
+                                                className={`row-start-1 flex items-center justify-center bg-white/10 p-2 ${previewImageColumn}`}
+                                            >
+                                                <img
+                                                    src={settings.image_url}
+                                                    alt=""
+                                                    className="max-h-10 max-w-12 object-contain"
+                                                />
+                                            </div>
+                                        )}
+                                        <div
+                                            className={`row-start-1 flex min-w-0 items-center justify-center overflow-hidden px-4 text-sm font-bold uppercase ${previewLabelColumn}`}
+                                            style={{
+                                                backgroundColor:
+                                                    settings.accent_color,
+                                                color: settings.background_color,
+                                                fontSize: `${previewHeadlineFontSize}px`,
+                                            }}
+                                        >
+                                            <span>{previewHeadline}</span>
+                                        </div>
+                                        <div
+                                            className={`row-start-1 flex min-w-0 items-center px-4 text-sm font-semibold ${previewTextColumn}`}
+                                        >
+                                            <span className="truncate">
+                                                {playingMessage?.content ??
+                                                    'RSS headline shown when the queue is empty'}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -679,366 +757,448 @@ export default function TickerDashboard({
                             >
                                 {({ processing }) => (
                                     <>
-                                        <div>
-                                            <Label htmlFor="headline">
-                                                Default headline
-                                            </Label>
-                                            <Input
-                                                id="headline"
-                                                name="headline"
-                                                defaultValue={settings.headline}
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="rss_headline">
-                                                RSS headline
-                                            </Label>
-                                            <Input
-                                                id="rss_headline"
-                                                name="rss_headline"
-                                                defaultValue={
-                                                    settings.rss_headline
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="user_headline">
-                                                User headline
-                                            </Label>
-                                            <Input
-                                                id="user_headline"
-                                                name="user_headline"
-                                                defaultValue={
-                                                    settings.user_headline
-                                                }
-                                            />
-                                        </div>
-                                        <div className="grid grid-cols-3 gap-3">
+                                        <SettingsSection
+                                            title="Text labels"
+                                            description="Headlines shown for default, RSS, and submitted messages."
+                                            defaultOpen
+                                        >
                                             <div>
-                                                <Label htmlFor="background_color">
-                                                    Background
+                                                <Label htmlFor="headline">
+                                                    Default headline
                                                 </Label>
                                                 <Input
-                                                    id="background_color"
-                                                    name="background_color"
-                                                    type="color"
+                                                    id="headline"
+                                                    name="headline"
                                                     defaultValue={
-                                                        settings.background_color
+                                                        settings.headline
                                                     }
-                                                    className="h-10 p-1"
                                                 />
                                             </div>
                                             <div>
-                                                <Label htmlFor="text_color">
-                                                    Text
+                                                <Label htmlFor="rss_headline">
+                                                    RSS headline
                                                 </Label>
                                                 <Input
-                                                    id="text_color"
-                                                    name="text_color"
-                                                    type="color"
+                                                    id="rss_headline"
+                                                    name="rss_headline"
                                                     defaultValue={
-                                                        settings.text_color
+                                                        settings.rss_headline
                                                     }
-                                                    className="h-10 p-1"
                                                 />
                                             </div>
                                             <div>
-                                                <Label htmlFor="accent_color">
-                                                    Accent
+                                                <Label htmlFor="user_headline">
+                                                    User headline
                                                 </Label>
                                                 <Input
-                                                    id="accent_color"
-                                                    name="accent_color"
-                                                    type="color"
+                                                    id="user_headline"
+                                                    name="user_headline"
                                                     defaultValue={
-                                                        settings.accent_color
+                                                        settings.user_headline
                                                     }
-                                                    className="h-10 p-1"
                                                 />
                                             </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3">
+                                        </SettingsSection>
+                                        <SettingsSection
+                                            title={t('tickerTheme')}
+                                            description="Select a reusable theme skin. None keeps the built-in color layout."
+                                        >
                                             <div>
-                                                <Label htmlFor="canvas_width">
-                                                    OBS width
+                                                <Label htmlFor="ticker_style">
+                                                    {t('tickerTheme')}
+                                                </Label>
+                                                <Select
+                                                    name="ticker_style"
+                                                    value={
+                                                        selectedTickerStyleValue
+                                                    }
+                                                    onValueChange={
+                                                        setSelectedTickerStyleValue
+                                                    }
+                                                >
+                                                    <SelectTrigger
+                                                        id="ticker_style"
+                                                        className="mt-1 w-full"
+                                                    >
+                                                        <span className="truncate">
+                                                            {selectedTickerStyleValue ===
+                                                            '__none'
+                                                                ? t('none')
+                                                                : selectedTickerStyle?.label}
+                                                        </span>
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__none">
+                                                            {t('none')}
+                                                        </SelectItem>
+                                                        {tickerStyles.map(
+                                                            (style) => (
+                                                                <SelectItem
+                                                                    key={style.value}
+                                                                    value={style.value}
+                                                                >
+                                                                    {style.label}
+                                                                </SelectItem>
+                                                            ),
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    Add theme folders with a matching
+                                                    JSON file to public/ticker-styles
+                                                    to make them appear here.
+                                                </p>
+                                            </div>
+                                            <input
+                                                type="hidden"
+                                                name="ticker_use_image_style"
+                                                value={hasThemeSkin ? '1' : '0'}
+                                            />
+                                        </SettingsSection>
+                                        {!hasThemeSkin && (
+                                            <SettingsSection
+                                                title="Colors"
+                                                description="Base colors used by the built-in ticker layout and chroma view."
+                                            >
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div>
+                                                        <Label htmlFor="background_color">
+                                                            Background
+                                                        </Label>
+                                                        <Input
+                                                            id="background_color"
+                                                            name="background_color"
+                                                            type="color"
+                                                            defaultValue={settings.background_color}
+                                                            className="h-10 p-1"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <Label htmlFor="text_color">
+                                                            Text
+                                                        </Label>
+                                                        <Input
+                                                            id="text_color"
+                                                            name="text_color"
+                                                            type="color"
+                                                            defaultValue={settings.text_color}
+                                                            className="h-10 p-1"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <Label htmlFor="accent_color">
+                                                            Accent
+                                                        </Label>
+                                                        <Input
+                                                            id="accent_color"
+                                                            name="accent_color"
+                                                            type="color"
+                                                            defaultValue={settings.accent_color}
+                                                            className="h-10 p-1"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </SettingsSection>
+                                        )}
+                                        <SettingsSection
+                                            title="Layout and style"
+                                            description="Canvas size, logo, chroma key, and animation timing."
+                                        >
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <Label htmlFor="canvas_width">
+                                                        OBS width
+                                                    </Label>
+                                                    <Input
+                                                        id="canvas_width"
+                                                        name="canvas_width"
+                                                        type="number"
+                                                        min="320"
+                                                        max="7680"
+                                                        defaultValue={
+                                                            settings.canvas_width
+                                                        }
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <Label htmlFor="canvas_height">
+                                                        OBS height
+                                                    </Label>
+                                                    <Input
+                                                        id="canvas_height"
+                                                        name="canvas_height"
+                                                        type="number"
+                                                        min="180"
+                                                        max="4320"
+                                                        defaultValue={
+                                                            settings.canvas_height
+                                                        }
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <Label htmlFor="animation_style">
+                                                    Animation
+                                                </Label>
+                                                <Select
+                                                    name="animation_style"
+                                                    defaultValue={
+                                                        settings.animation_style
+                                                    }
+                                                >
+                                                    <SelectTrigger
+                                                        id="animation_style"
+                                                        className="mt-1 w-full"
+                                                    >
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="slide-left">
+                                                            Slide in from left
+                                                        </SelectItem>
+                                                        <SelectItem value="fade">
+                                                            Fade in
+                                                        </SelectItem>
+                                                        <SelectItem value="bounce">
+                                                            Bounce
+                                                        </SelectItem>
+                                                        <SelectItem value="zoom">
+                                                            Zoom / shape
+                                                        </SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div>
+                                                <Label htmlFor="animation_duration_seconds">
+                                                    Fade in seconds
                                                 </Label>
                                                 <Input
-                                                    id="canvas_width"
-                                                    name="canvas_width"
+                                                    id="animation_duration_seconds"
+                                                    name="animation_duration_seconds"
                                                     type="number"
-                                                    min="320"
-                                                    max="7680"
+                                                    min="1"
+                                                    max="10"
                                                     defaultValue={
-                                                        settings.canvas_width
+                                                        settings.animation_duration_seconds
                                                     }
                                                 />
                                             </div>
                                             <div>
-                                                <Label htmlFor="canvas_height">
-                                                    OBS height
+                                                <Label htmlFor="animation_out_duration_seconds">
+                                                    Fade out seconds
                                                 </Label>
                                                 <Input
-                                                    id="canvas_height"
-                                                    name="canvas_height"
+                                                    id="animation_out_duration_seconds"
+                                                    name="animation_out_duration_seconds"
                                                     type="number"
-                                                    min="180"
-                                                    max="4320"
+                                                    min="1"
+                                                    max="10"
                                                     defaultValue={
-                                                        settings.canvas_height
+                                                        settings.animation_out_duration_seconds
                                                     }
                                                 />
                                             </div>
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="animation_style">
-                                                Animation
-                                            </Label>
-                                            <Select
-                                                name="animation_style"
-                                                defaultValue={
-                                                    settings.animation_style
-                                                }
-                                            >
-                                                <SelectTrigger
-                                                    id="animation_style"
-                                                    className="mt-1 w-full"
+                                            {!hasThemeSkin && (
+                                                <div>
+                                                    <Label htmlFor="shape_style">
+                                                        Shape
+                                                    </Label>
+                                                    <Select
+                                                        name="shape_style"
+                                                        defaultValue={
+                                                            settings.shape_style
+                                                        }
+                                                    >
+                                                        <SelectTrigger
+                                                            id="shape_style"
+                                                            className="mt-1 w-full"
+                                                        >
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="bar">
+                                                                Straight lower-third
+                                                            </SelectItem>
+                                                            <SelectItem value="pill">
+                                                                Rounded pill
+                                                            </SelectItem>
+                                                            <SelectItem value="angled">
+                                                                Angled edge
+                                                            </SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            )}
+                                            <div>
+                                                <Label htmlFor="label_position">
+                                                    Headline position
+                                                </Label>
+                                                <Select
+                                                    name="label_position"
+                                                    defaultValue={
+                                                        settings.label_position
+                                                    }
                                                 >
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="slide-left">
-                                                        Slide in from left
-                                                    </SelectItem>
-                                                    <SelectItem value="fade">
-                                                        Fade in
-                                                    </SelectItem>
-                                                    <SelectItem value="bounce">
-                                                        Bounce
-                                                    </SelectItem>
-                                                    <SelectItem value="zoom">
-                                                        Zoom / shape
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="animation_duration_seconds">
-                                                Fade in seconds
-                                            </Label>
-                                            <Input
-                                                id="animation_duration_seconds"
-                                                name="animation_duration_seconds"
-                                                type="number"
-                                                min="1"
-                                                max="10"
-                                                defaultValue={
-                                                    settings.animation_duration_seconds
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="animation_out_duration_seconds">
-                                                Fade out seconds
-                                            </Label>
-                                            <Input
-                                                id="animation_out_duration_seconds"
-                                                name="animation_out_duration_seconds"
-                                                type="number"
-                                                min="1"
-                                                max="10"
-                                                defaultValue={
-                                                    settings.animation_out_duration_seconds
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="shape_style">
-                                                Shape
-                                            </Label>
-                                            <Select
-                                                name="shape_style"
-                                                defaultValue={
-                                                    settings.shape_style
-                                                }
-                                            >
-                                                <SelectTrigger
-                                                    id="shape_style"
-                                                    className="mt-1 w-full"
+                                                    <SelectTrigger
+                                                        id="label_position"
+                                                        className="mt-1 w-full"
+                                                    >
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="left">
+                                                            Left
+                                                        </SelectItem>
+                                                        <SelectItem value="right">
+                                                            Right
+                                                        </SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div>
+                                                <Label htmlFor="chroma_key_color">
+                                                    Chroma key
+                                                </Label>
+                                                <Select
+                                                    name="chroma_key_color"
+                                                    defaultValue={
+                                                        settings.chroma_key_color
+                                                    }
                                                 >
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="bar">
-                                                        Straight lower-third
-                                                    </SelectItem>
-                                                    <SelectItem value="pill">
-                                                        Rounded pill
-                                                    </SelectItem>
-                                                    <SelectItem value="angled">
-                                                        Angled edge
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="label_position">
-                                                Headline position
-                                            </Label>
-                                            <Select
-                                                name="label_position"
-                                                defaultValue={
-                                                    settings.label_position
-                                                }
-                                            >
-                                                <SelectTrigger
-                                                    id="label_position"
-                                                    className="mt-1 w-full"
-                                                >
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="left">
-                                                        Left
-                                                    </SelectItem>
-                                                    <SelectItem value="right">
-                                                        Right
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="chroma_key_color">
-                                                Chroma key
-                                            </Label>
-                                            <Select
-                                                name="chroma_key_color"
-                                                defaultValue={
-                                                    settings.chroma_key_color
-                                                }
-                                            >
-                                                <SelectTrigger
-                                                    id="chroma_key_color"
-                                                    className="mt-1 w-full"
-                                                >
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="green">
-                                                        Green
-                                                    </SelectItem>
-                                                    <SelectItem value="blue">
-                                                        Blue
-                                                    </SelectItem>
-                                                    <SelectItem value="magenta">
-                                                        Magenta
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="image_url">
-                                                Image URL
-                                            </Label>
-                                            <Input
-                                                id="image_url"
-                                                name="image_url"
-                                                type="url"
-                                                defaultValue={
-                                                    settings.image_url ?? ''
-                                                }
-                                                placeholder="https://.../logo.png"
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="crawl_duration_seconds">
-                                                Scroll duration seconds
-                                            </Label>
-                                            <Input
-                                                id="crawl_duration_seconds"
-                                                name="crawl_duration_seconds"
-                                                type="number"
-                                                min="10"
-                                                max="180"
-                                                defaultValue={
-                                                    settings.crawl_duration_seconds
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="message_display_seconds">
-                                                Message display seconds
-                                            </Label>
-                                            <Input
-                                                id="message_display_seconds"
-                                                name="message_display_seconds"
-                                                type="number"
-                                                min="5"
-                                                max="120"
-                                                defaultValue={
-                                                    settings.message_display_seconds
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="poll_interval_seconds">
-                                                Refresh interval
-                                            </Label>
-                                            <Input
-                                                id="poll_interval_seconds"
-                                                name="poll_interval_seconds"
-                                                type="number"
-                                                min="5"
-                                                max="120"
-                                                defaultValue={
-                                                    settings.poll_interval_seconds
-                                                }
-                                            />
-                                        </div>
-                                        <label className="flex items-center gap-2 text-sm">
-                                            <input
-                                                type="hidden"
-                                                name="require_auth_to_submit"
-                                                value="0"
-                                            />
-                                            <Checkbox
-                                                name="require_auth_to_submit"
-                                                value="1"
-                                                defaultChecked={
-                                                    settings.require_auth_to_submit
-                                                }
-                                            />
-                                            Require Twitch login to submit
-                                        </label>
-                                        <label className="flex items-center gap-2 text-sm">
-                                            <input
-                                                type="hidden"
-                                                name="moderator_only_submissions"
-                                                value="0"
-                                            />
-                                            <Checkbox
-                                                name="moderator_only_submissions"
-                                                value="1"
-                                                defaultChecked={
-                                                    settings.moderator_only_submissions
-                                                }
-                                            />
-                                            Moderator-only submissions
-                                        </label>
-                                        <label className="flex items-center gap-2 text-sm">
-                                            <input
-                                                type="hidden"
-                                                name="show_rss"
-                                                value="0"
-                                            />
-                                            <Checkbox
-                                                name="show_rss"
-                                                value="1"
-                                                defaultChecked={
-                                                    settings.show_rss
-                                                }
-                                            />
-                                            Show RSS
-                                        </label>
+                                                    <SelectTrigger
+                                                        id="chroma_key_color"
+                                                        className="mt-1 w-full"
+                                                    >
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="green">
+                                                            Green
+                                                        </SelectItem>
+                                                        <SelectItem value="blue">
+                                                            Blue
+                                                        </SelectItem>
+                                                        <SelectItem value="magenta">
+                                                            Magenta
+                                                        </SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            {!hasThemeSkin && (
+                                                <div>
+                                                    <Label htmlFor="image_url">
+                                                        Image URL
+                                                    </Label>
+                                                    <Input
+                                                        id="image_url"
+                                                        name="image_url"
+                                                        type="url"
+                                                        defaultValue={settings.image_url ?? ''}
+                                                        placeholder="https://.../logo.png"
+                                                    />
+                                                </div>
+                                            )}
+                                        </SettingsSection>
+                                        <SettingsSection
+                                            title="Timing"
+                                            description="How long messages and RSS text stay visible or scroll."
+                                        >
+                                            <div>
+                                                <Label htmlFor="crawl_duration_seconds">
+                                                    Scroll duration seconds
+                                                </Label>
+                                                <Input
+                                                    id="crawl_duration_seconds"
+                                                    name="crawl_duration_seconds"
+                                                    type="number"
+                                                    min="10"
+                                                    max="180"
+                                                    defaultValue={
+                                                        settings.crawl_duration_seconds
+                                                    }
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label htmlFor="message_display_seconds">
+                                                    Message display seconds
+                                                </Label>
+                                                <Input
+                                                    id="message_display_seconds"
+                                                    name="message_display_seconds"
+                                                    type="number"
+                                                    min="5"
+                                                    max="120"
+                                                    defaultValue={
+                                                        settings.message_display_seconds
+                                                    }
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label htmlFor="poll_interval_seconds">
+                                                    Refresh interval
+                                                </Label>
+                                                <Input
+                                                    id="poll_interval_seconds"
+                                                    name="poll_interval_seconds"
+                                                    type="number"
+                                                    min="5"
+                                                    max="120"
+                                                    defaultValue={
+                                                        settings.poll_interval_seconds
+                                                    }
+                                                />
+                                            </div>
+                                        </SettingsSection>
+                                        <SettingsSection
+                                            title="Submission and RSS"
+                                            description="Control who may submit and whether RSS should fill empty queue time."
+                                        >
+                                            <label className="flex items-center gap-2 text-sm">
+                                                <input
+                                                    type="hidden"
+                                                    name="require_auth_to_submit"
+                                                    value="0"
+                                                />
+                                                <Checkbox
+                                                    name="require_auth_to_submit"
+                                                    value="1"
+                                                    defaultChecked={
+                                                        settings.require_auth_to_submit
+                                                    }
+                                                />
+                                                Require Twitch login to submit
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm">
+                                                <input
+                                                    type="hidden"
+                                                    name="moderator_only_submissions"
+                                                    value="0"
+                                                />
+                                                <Checkbox
+                                                    name="moderator_only_submissions"
+                                                    value="1"
+                                                    defaultChecked={
+                                                        settings.moderator_only_submissions
+                                                    }
+                                                />
+                                                Moderator-only submissions
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm">
+                                                <input
+                                                    type="hidden"
+                                                    name="show_rss"
+                                                    value="0"
+                                                />
+                                                <Checkbox
+                                                    name="show_rss"
+                                                    value="1"
+                                                    defaultChecked={
+                                                        settings.show_rss
+                                                    }
+                                                />
+                                                Show RSS
+                                            </label>
+                                        </SettingsSection>
                                         <Button
                                             type="submit"
                                             disabled={processing}
@@ -1051,6 +1211,7 @@ export default function TickerDashboard({
                             </Form>
                         </CardContent>
                     </Card>
+
                 </div>
             </div>
         </>

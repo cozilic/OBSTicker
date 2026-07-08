@@ -4,6 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string|null $ticker_style
+ * @property bool $ticker_use_image_style
+ * @property string|null $custom_label_left
+ * @property string|null $custom_label_width
+ * @property string|null $custom_viewport_left
+ * @property string|null $custom_viewport_right
+ */
 class TickerSetting extends Model
 {
     protected $fillable = [
@@ -20,6 +28,8 @@ class TickerSetting extends Model
         'animation_duration_seconds',
         'animation_out_duration_seconds',
         'shape_style',
+        'ticker_style',
+        'ticker_use_image_style',
         'label_position',
         'chroma_key_color',
         'image_url',
@@ -29,6 +39,10 @@ class TickerSetting extends Model
         'require_auth_to_submit',
         'moderator_only_submissions',
         'show_rss',
+        'custom_label_left',
+        'custom_label_width',
+        'custom_viewport_left',
+        'custom_viewport_right',
     ];
 
     protected $attributes = [
@@ -44,6 +58,8 @@ class TickerSetting extends Model
         'animation_duration_seconds' => 1,
         'animation_out_duration_seconds' => 1,
         'shape_style' => 'bar',
+        'ticker_style' => null,
+        'ticker_use_image_style' => true,
         'label_position' => 'left',
         'chroma_key_color' => 'green',
         'crawl_duration_seconds' => 35,
@@ -61,6 +77,7 @@ class TickerSetting extends Model
             'canvas_height' => 'integer',
             'animation_duration_seconds' => 'integer',
             'animation_out_duration_seconds' => 'integer',
+            'ticker_use_image_style' => 'boolean',
             'crawl_duration_seconds' => 'integer',
             'message_display_seconds' => 'integer',
             'poll_interval_seconds' => 'integer',
@@ -97,6 +114,8 @@ class TickerSetting extends Model
             'animation_duration_seconds' => 1,
             'animation_out_duration_seconds' => 1,
             'shape_style' => 'bar',
+            'ticker_style' => null,
+            'ticker_use_image_style' => true,
             'label_position' => 'left',
             'chroma_key_color' => 'green',
             'crawl_duration_seconds' => 35,

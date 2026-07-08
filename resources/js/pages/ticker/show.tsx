@@ -17,12 +17,19 @@ type TickerPayload = {
         animation_duration_seconds: number;
         animation_out_duration_seconds: number;
         shape_style: 'bar' | 'pill' | 'angled';
+        ticker_style: string | null;
+        ticker_style_url: string | null;
+        ticker_use_image_style: boolean;
         label_position: 'left' | 'right';
         chroma_key_color: 'green' | 'blue' | 'magenta';
         image_url: string | null;
         crawl_duration_seconds: number;
         message_display_seconds: number;
         poll_interval_seconds: number;
+        custom_label_left: string | null;
+        custom_label_width: string | null;
+        custom_viewport_left: string | null;
+        custom_viewport_right: string | null;
     };
     items: {
         type: string;
@@ -50,12 +57,19 @@ const fallbackPayload: TickerPayload = {
         animation_duration_seconds: 1,
         animation_out_duration_seconds: 1,
         shape_style: 'bar',
+        ticker_style: null,
+        ticker_style_url: null,
+        ticker_use_image_style: true,
         label_position: 'left',
         chroma_key_color: 'green',
         image_url: null,
         crawl_duration_seconds: 35,
         message_display_seconds: 18,
         poll_interval_seconds: 15,
+        custom_label_left: null,
+        custom_label_width: null,
+        custom_viewport_left: null,
+        custom_viewport_right: null,
     },
     items: [],
 };
@@ -80,12 +94,18 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const [displayedItem, setDisplayedItem] = useState<TickerItem | null>(null);
     const tickerViewportRef = useRef<HTMLDivElement | null>(null);
     const tickerTrackRef = useRef<HTMLDivElement | null>(null);
-    const [tickerDurationSeconds, setTickerDurationSeconds] = useState(payload.settings.crawl_duration_seconds);
+    const [tickerDurationSeconds, setTickerDurationSeconds] = useState(
+        payload.settings.crawl_duration_seconds,
+    );
     const [tickerTextFontSize, setTickerTextFontSize] = useState(22);
     const [viewportScale, setViewportScale] = useState(1);
     const [tickerStartOffset, setTickerStartOffset] = useState(100);
     const isVisible = payload.items.length > 0;
-    const useDefaultTickerSkin = !useChromaKey;
+    const hasThemeSkin = Boolean(payload.settings.ticker_style);
+    const useTickerSkin = !useChromaKey && hasThemeSkin;
+    const tickerSkinUrl = useTickerSkin
+        ? payload.settings.ticker_style_url ?? defaultTickerSkinUrl
+        : null;
     const currentItem = useMemo(() => {
         if (payload.items.length === 0) {
             return null;
@@ -102,57 +122,94 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                     item.label === displayedItem.label &&
                     item.text === displayedItem.text &&
                     item.url === displayedItem.url,
-            ) ?? payload.items[0] ?? null
+            ) ??
+            payload.items[0] ??
+            null
         );
     }, [displayedItem, payload.items]);
-    const headline = currentItem?.type === 'rss' ? payload.settings.rss_headline : payload.settings.user_headline;
+    const headline =
+        currentItem?.type === 'rss'
+            ? payload.settings.rss_headline
+            : payload.settings.user_headline;
     const headlineText = headline || payload.settings.headline;
-    const hasImage = Boolean(payload.settings.image_url);
+    const hasImage = !hasThemeSkin && Boolean(payload.settings.image_url);
     const labelIsRight = payload.settings.label_position === 'right';
-    const shellHeight = clamp(Math.round(payload.settings.canvas_height * 0.06), 36, 96);
-    const labelWidth = useDefaultTickerSkin ? 0 : clamp(Math.round(payload.settings.canvas_width * 0.12), 120, 320);
-    const imageWidth = hasImage ? clamp(Math.round(payload.settings.canvas_width * 0.05), 64, 128) : 0;
-    const shellColumns = useDefaultTickerSkin
+    const shellHeight = clamp(
+        Math.round(payload.settings.canvas_height * 0.06),
+        36,
+        96,
+    );
+    const labelWidth = useTickerSkin
+        ? 0
+        : clamp(Math.round(payload.settings.canvas_width * 0.12), 120, 320);
+    const imageWidth = hasImage
+        ? clamp(Math.round(payload.settings.canvas_width * 0.05), 64, 128)
+        : 0;
+    const shellColumns = useTickerSkin
         ? '1fr'
         : labelIsRight
-        ? hasImage
-            ? `1fr ${labelWidth}px ${imageWidth}px`
-            : `1fr ${labelWidth}px`
-        : hasImage
+          ? hasImage
+              ? `1fr ${labelWidth}px ${imageWidth}px`
+              : `1fr ${labelWidth}px`
+          : hasImage
             ? `${imageWidth}px ${labelWidth}px 1fr`
             : `${labelWidth}px 1fr`;
     const imageColumn = labelIsRight ? 'col-start-3' : 'col-start-1';
-    const labelColumn = labelIsRight ? 'col-start-2' : hasImage ? 'col-start-2' : 'col-start-1';
-    const tickerColumn = labelIsRight ? 'col-start-1' : hasImage ? 'col-start-3' : 'col-start-2';
+    const labelColumn = labelIsRight
+        ? 'col-start-2'
+        : hasImage
+          ? 'col-start-2'
+          : 'col-start-1';
+    const tickerColumn = labelIsRight
+        ? 'col-start-1'
+        : hasImage
+          ? 'col-start-3'
+          : 'col-start-2';
     const shellPaddingX = clamp(Math.round(shellHeight * 0.22), 8, 20);
     const labelMaxFontSize = clamp(Math.round(shellHeight * 0.34), 14, 22);
     const labelFontSize = fitTextToWidth(headlineText.toUpperCase(), {
         maxSize: Math.max(10, Math.round(labelMaxFontSize * viewportScale)),
         minSize: 10,
-        maxWidth: useDefaultTickerSkin ? Math.round(payload.settings.canvas_width * 0.13) : Math.max(0, labelWidth - shellPaddingX * 2),
+        maxWidth: useTickerSkin
+            ? Math.round(payload.settings.canvas_width * 0.13)
+            : Math.max(0, labelWidth - shellPaddingX * 2),
         fontWeight: '700',
     });
     const tickerFontSize = clamp(Math.round(shellHeight * 0.52), 18, 34);
     const imageMaxHeight = clamp(Math.round(shellHeight * 0.72), 24, 52);
     const shellAnimationInDuration = `${clamp(payload.settings.animation_duration_seconds, 1, 10)}s`;
     const shellAnimationOutDuration = `${clamp(payload.settings.animation_out_duration_seconds, 1, 10)}s`;
-    const tickerTextColor = useDefaultTickerSkin ? '#172033' : payload.settings.text_color;
+    const tickerTextColor = useTickerSkin
+        ? '#172033'
+        : payload.settings.text_color;
     const chromaBackground = {
         green: '#00ff00',
         blue: '#0000ff',
         magenta: '#ff00ff',
     }[payload.settings.chroma_key_color];
-    const chromaContentBackground = useChromaKey ? '#0f172a' : payload.settings.background_color;
-    const chromaLabelBackground = useChromaKey ? '#f8fafc' : payload.settings.accent_color;
-    const chromaLabelText = useChromaKey ? '#0f172a' : payload.settings.background_color;
+    const chromaContentBackground = useChromaKey
+        ? '#0f172a'
+        : payload.settings.background_color;
+    const chromaLabelBackground = useChromaKey
+        ? '#f8fafc'
+        : payload.settings.accent_color;
+    const chromaLabelText = useChromaKey
+        ? '#0f172a'
+        : payload.settings.background_color;
     const tickerText = useMemo(() => {
         if (!currentItem) {
             return '';
         }
 
-        return currentItem.label ? `${currentItem.label}: ${currentItem.text}` : currentItem.text;
+        return currentItem.label
+            ? `${currentItem.label}: ${currentItem.text}`
+            : currentItem.text;
     }, [currentItem]);
-    const tickerMinDurationSeconds = clamp(payload.settings.crawl_duration_seconds, 5, 240);
+    const tickerMinDurationSeconds = clamp(
+        payload.settings.crawl_duration_seconds,
+        5,
+        240,
+    );
     const shellStyle: CSSProperties & {
         '--lower-third-in-duration': string;
         '--lower-third-out-duration': string;
@@ -160,8 +217,10 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     } = {
         bottom: '0',
         height: `${shellHeight}px`,
-        backgroundColor: useDefaultTickerSkin ? 'transparent' : chromaContentBackground,
-        backgroundImage: useDefaultTickerSkin ? `url("${defaultTickerSkinUrl}")` : undefined,
+        backgroundColor: useTickerSkin
+            ? 'transparent'
+            : chromaContentBackground,
+        backgroundImage: tickerSkinUrl ? `url("${tickerSkinUrl}")` : undefined,
         backgroundPosition: 'center 52%',
         backgroundRepeat: 'no-repeat',
         backgroundSize: '100% auto',
@@ -172,21 +231,36 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
         '--lower-third-in-duration': shellAnimationInDuration,
         '--lower-third-out-duration': shellAnimationOutDuration,
     };
-    const defaultSkinLabelStyle: CSSProperties = useDefaultTickerSkin
+    const defaultSkinLabelStyle: CSSProperties = useTickerSkin
         ? {
-            top: 0,
-            bottom: 0,
-            left: '8.5%',
-            width: '13.25%',
-        }
+              top: 0,
+              bottom: 0,
+              left:
+                  payload.settings.custom_label_left &&
+                  payload.settings.custom_viewport_right
+                      ? labelIsRight
+                          ? `calc(100% - ${payload.settings.custom_viewport_right})`
+                          : payload.settings.custom_label_left
+                      : '8.5%',
+              width:
+                  (labelIsRight
+                      ? payload.settings.custom_viewport_right
+                      : payload.settings.custom_label_width) ?? '13.25%',
+          }
         : {};
-    const defaultSkinTickerViewportStyle: CSSProperties = useDefaultTickerSkin
+    const defaultSkinTickerViewportStyle: CSSProperties = useTickerSkin
         ? {
-            top: 0,
-            bottom: 0,
-            left: '23%',
-            right: '9.5%',
-        }
+              top: 0,
+              bottom: 0,
+              left:
+                  (labelIsRight
+                      ? payload.settings.custom_label_width
+                      : payload.settings.custom_viewport_left) ?? '23%',
+              right:
+                  (labelIsRight
+                      ? payload.settings.custom_viewport_left
+                      : payload.settings.custom_viewport_right) ?? '9.5%',
+          }
         : {};
 
     useLayoutEffect(() => {
@@ -194,28 +268,49 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
             window.requestAnimationFrame(() => {
                 setTickerDurationSeconds(tickerMinDurationSeconds);
                 setTickerTextFontSize(tickerFontSize);
-                setViewportScale(clamp((window.innerWidth || payload.settings.canvas_width) / payload.settings.canvas_width, 0.55, 1));
-                setTickerStartOffset(window.innerWidth || payload.settings.canvas_width);
+                setViewportScale(
+                    clamp(
+                        (window.innerWidth || payload.settings.canvas_width) /
+                            payload.settings.canvas_width,
+                        0.55,
+                        1,
+                    ),
+                );
+                setTickerStartOffset(
+                    window.innerWidth || payload.settings.canvas_width,
+                );
             });
 
             return;
         }
 
         const measureDuration = () => {
-            const nextViewportScale = clamp((window.innerWidth || payload.settings.canvas_width) / payload.settings.canvas_width, 0.55, 1);
-            const viewportWidth = tickerViewportRef.current?.clientWidth ?? window.innerWidth;
+            const nextViewportScale = clamp(
+                (window.innerWidth || payload.settings.canvas_width) /
+                    payload.settings.canvas_width,
+                0.55,
+                1,
+            );
+            const viewportWidth =
+                tickerViewportRef.current?.clientWidth ?? window.innerWidth;
             const trackWidth = tickerTrackRef.current?.scrollWidth ?? 0;
             const travelDistance = viewportWidth + trackWidth;
             const estimatedDurationSeconds = Math.ceil(travelDistance / 90);
-            const nextTickerStartOffset = tickerViewportRef.current?.clientWidth ?? window.innerWidth;
+            const nextTickerStartOffset =
+                tickerViewportRef.current?.clientWidth ?? window.innerWidth;
             const nextFontSize = fitTextToWidth(tickerText, {
-                maxSize: Math.max(16, Math.round(tickerFontSize * nextViewportScale)),
+                maxSize: Math.max(
+                    16,
+                    Math.round(tickerFontSize * nextViewportScale),
+                ),
                 minSize: 16,
                 maxWidth: viewportWidth,
                 fontWeight: '600',
             });
 
-            setTickerDurationSeconds(Math.max(tickerMinDurationSeconds, estimatedDurationSeconds));
+            setTickerDurationSeconds(
+                Math.max(tickerMinDurationSeconds, estimatedDurationSeconds),
+            );
             setTickerTextFontSize(nextFontSize);
             setViewportScale(nextViewportScale);
             setTickerStartOffset(nextTickerStartOffset);
@@ -319,13 +414,18 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                             item.url === current.url,
                     );
 
-                    return stillExists ? current : nextPayload.items[0] ?? null;
+                    return stillExists
+                        ? current
+                        : (nextPayload.items[0] ?? null);
                 });
             }
         };
 
         void loadPayload();
-        const timer = window.setInterval(() => void loadPayload(), payload.settings.poll_interval_seconds * 1000);
+        const timer = window.setInterval(
+            () => void loadPayload(),
+            payload.settings.poll_interval_seconds * 1000,
+        );
 
         return () => {
             isMounted = false;
@@ -345,13 +445,23 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                 return payload.items[0] ?? null;
             }
 
-            const currentIndex = payload.items.findIndex((item) => item.type === current.type && item.label === current.label && item.text === current.text && item.url === current.url);
+            const currentIndex = payload.items.findIndex(
+                (item) =>
+                    item.type === current.type &&
+                    item.label === current.label &&
+                    item.text === current.text &&
+                    item.url === current.url,
+            );
 
             if (currentIndex === -1) {
                 return payload.items[0] ?? null;
             }
 
-            return payload.items[(currentIndex + 1) % payload.items.length] ?? payload.items[0] ?? null;
+            return (
+                payload.items[(currentIndex + 1) % payload.items.length] ??
+                payload.items[0] ??
+                null
+            );
         });
     };
 
@@ -370,10 +480,16 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                     key={`${currentItem?.type ?? 'empty'}-${currentItem?.label ?? ''}-${currentItem?.text ?? ''}-${payload.settings.animation_style}-${payload.settings.shape_style}`}
                     className={[
                         'lower-third-shell absolute right-0 left-0 grid overflow-hidden shadow-2xl',
-                        payload.settings.shape_style === 'pill' ? 'mx-10 rounded-full' : '',
+                        payload.settings.shape_style === 'pill'
+                            ? 'mx-10 rounded-full'
+                            : '',
                         payload.settings.shape_style === 'bar' ? '' : '',
-                        payload.settings.shape_style === 'angled' ? '[clip-path:polygon(0_0,98%_0,100%_100%,0_100%)]' : '',
-                        isVisible ? `lower-third-in lower-third-${payload.settings.animation_style}` : `lower-third-out lower-third-${payload.settings.animation_style}`,
+                        payload.settings.shape_style === 'angled'
+                            ? '[clip-path:polygon(0_0,98%_0,100%_100%,0_100%)]'
+                            : '',
+                        isVisible
+                            ? `lower-third-in lower-third-${payload.settings.animation_style}`
+                            : `lower-third-out lower-third-${payload.settings.animation_style}`,
                     ].join(' ')}
                     style={shellStyle}
                 >
@@ -396,14 +512,20 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                     <div
                         className={[
                             'z-10 flex items-center justify-center overflow-hidden text-center uppercase',
-                            useDefaultTickerSkin ? 'absolute' : `relative row-start-1 ${labelColumn}`,
+                            useTickerSkin
+                                ? 'absolute'
+                                : `relative row-start-1 ${labelColumn}`,
                         ].join(' ')}
                         style={{
-                            backgroundColor: useDefaultTickerSkin ? 'transparent' : chromaLabelBackground,
-                            color: useDefaultTickerSkin ? '#ffffff' : chromaLabelText,
+                            backgroundColor: useTickerSkin
+                                ? 'transparent'
+                                : chromaLabelBackground,
+                            color: useTickerSkin ? '#ffffff' : chromaLabelText,
                             fontSize: `${labelFontSize}px`,
                             paddingInline: `${shellPaddingX}px`,
-                            textShadow: useDefaultTickerSkin ? '0 1px 8px rgb(0 0 0 / 0.45)' : undefined,
+                            textShadow: useTickerSkin
+                                ? '0 1px 8px rgb(0 0 0 / 0.45)'
+                                : undefined,
                             ...defaultSkinLabelStyle,
                         }}
                     >
@@ -413,24 +535,34 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                         ref={tickerViewportRef}
                         className={[
                             'z-0 flex min-w-0 items-center overflow-hidden [direction:ltr]',
-                            useDefaultTickerSkin ? 'absolute' : `relative row-start-1 ${tickerColumn}`,
+                            useTickerSkin
+                                ? 'absolute'
+                                : `relative row-start-1 ${tickerColumn}`,
                         ].join(' ')}
                         style={{
                             ...defaultSkinTickerViewportStyle,
-                            paddingInlineStart: useDefaultTickerSkin ? undefined : `${shellPaddingX}px`,
-                            paddingInlineEnd: useDefaultTickerSkin ? undefined : `${shellPaddingX}px`,
+                            paddingInlineStart: useTickerSkin
+                                ? undefined
+                                : `${shellPaddingX}px`,
+                            paddingInlineEnd: useTickerSkin
+                                ? undefined
+                                : `${shellPaddingX}px`,
                         }}
                     >
                         <div
                             ref={tickerTrackRef}
-                            className="ticker-scroll inline-flex w-max shrink-0 whitespace-nowrap font-semibold tracking-normal"
+                            className="ticker-scroll inline-flex w-max shrink-0 font-semibold tracking-normal whitespace-nowrap"
                             onAnimationEnd={advanceItem}
                             style={{
                                 animationDuration: `${tickerDurationSeconds}s`,
-                                animationPlayState: isVisible ? 'running' : 'paused',
+                                animationPlayState: isVisible
+                                    ? 'running'
+                                    : 'paused',
                                 fontSize: `${tickerTextFontSize}px`,
                                 paddingInline: `${shellPaddingX}px`,
-                                textShadow: useDefaultTickerSkin ? '0 1px 10px rgb(255 255 255 / 0.5)' : undefined,
+                                textShadow: useTickerSkin
+                                    ? '0 1px 10px rgb(255 255 255 / 0.5)'
+                                    : undefined,
                             }}
                         >
                             <span>{tickerText}</span>

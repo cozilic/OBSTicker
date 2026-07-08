@@ -13,6 +13,8 @@ use Illuminate\Support\Str;
 
 class TickerFeedService
 {
+    public function __construct(private readonly TickerStyleRepository $tickerStyles) {}
+
     /**
      * @return array{
      *     settings: array{
@@ -28,15 +30,22 @@ class TickerFeedService
      *         animation_duration_seconds: int,
      *         animation_out_duration_seconds: int,
      *         shape_style: string,
+     *         ticker_style: string|null,
+     *         ticker_style_url: string|null,
+     *         ticker_use_image_style: bool,
      *         label_position: string,
      *         chroma_key_color: string,
      *         image_url: string|null,
      *         crawl_duration_seconds: int,
      *         message_display_seconds: int,
      *         poll_interval_seconds: int,
-     *         show_rss: bool
+     *         show_rss: bool,
+     *         custom_label_left: string|null,
+     *         custom_label_width: string|null,
+     *         custom_viewport_left: string|null,
+     *         custom_viewport_right: string|null
      *     },
-     *     items: list<array{type: string, label: string|null, text: string, url: string|null}>
+     *     items: array<int, array{type: string, label: string|null, text: string, url: string|null}>
      * }
      */
     public function payload(User $owner): array
@@ -110,17 +119,47 @@ class TickerFeedService
      *     animation_duration_seconds: int,
      *     animation_out_duration_seconds: int,
      *     shape_style: string,
+     *     ticker_style: string|null,
+     *     ticker_style_url: string|null,
+     *     ticker_use_image_style: bool,
      *     label_position: string,
      *     chroma_key_color: string,
      *     image_url: string|null,
      *     crawl_duration_seconds: int,
      *     message_display_seconds: int,
      *     poll_interval_seconds: int,
-     *     show_rss: bool
+     *     show_rss: bool,
+     *     custom_label_left: string|null,
+     *     custom_label_width: string|null,
+     *     custom_viewport_left: string|null,
+     *     custom_viewport_right: string|null
      * }
      */
     private function settingsPayload(TickerSetting $settings): array
     {
+        $customLabelLeft = $settings->custom_label_left;
+        $customLabelWidth = $settings->custom_label_width;
+        $customViewportLeft = $settings->custom_viewport_left;
+        $customViewportRight = $settings->custom_viewport_right;
+
+        if ($settings->ticker_style) {
+            $themeSlug = pathinfo($settings->ticker_style, PATHINFO_FILENAME);
+            $metaPath = public_path('ticker-styles/compiled/'.$themeSlug.'.json');
+            if (! is_file($metaPath)) {
+                $metaPath = public_path('ticker-styles/'.$themeSlug.'/'.$themeSlug.'.json');
+            }
+
+            if (is_file($metaPath)) {
+                $meta = json_decode((string) file_get_contents($metaPath), true);
+                if (is_array($meta)) {
+                    $customLabelLeft = $meta['custom_label_left'] ?? $customLabelLeft;
+                    $customLabelWidth = $meta['custom_label_width'] ?? $customLabelWidth;
+                    $customViewportLeft = $meta['custom_viewport_left'] ?? $customViewportLeft;
+                    $customViewportRight = $meta['custom_viewport_right'] ?? $customViewportRight;
+                }
+            }
+        }
+
         return [
             'headline' => $settings->headline,
             'rss_headline' => $settings->rss_headline,
@@ -134,6 +173,9 @@ class TickerFeedService
             'animation_duration_seconds' => $settings->animation_duration_seconds,
             'animation_out_duration_seconds' => $settings->animation_out_duration_seconds,
             'shape_style' => $settings->shape_style,
+            'ticker_style' => $settings->ticker_style,
+            'ticker_style_url' => $this->tickerStyles->url($settings->ticker_style),
+            'ticker_use_image_style' => $settings->ticker_use_image_style,
             'label_position' => $settings->label_position,
             'chroma_key_color' => $settings->chroma_key_color,
             'image_url' => $settings->image_url,
@@ -141,6 +183,10 @@ class TickerFeedService
             'message_display_seconds' => $settings->message_display_seconds,
             'poll_interval_seconds' => $settings->poll_interval_seconds,
             'show_rss' => $settings->show_rss,
+            'custom_label_left' => $customLabelLeft,
+            'custom_label_width' => $customLabelWidth,
+            'custom_viewport_left' => $customViewportLeft,
+            'custom_viewport_right' => $customViewportRight,
         ];
     }
 
@@ -172,13 +218,20 @@ class TickerFeedService
      *         animation_duration_seconds: int,
      *         animation_out_duration_seconds: int,
      *         shape_style: string,
+     *         ticker_style: string|null,
+     *         ticker_style_url: string|null,
+     *         ticker_use_image_style: bool,
      *         label_position: string,
      *         chroma_key_color: string,
      *         image_url: string|null,
      *         crawl_duration_seconds: int,
      *         message_display_seconds: int,
      *         poll_interval_seconds: int,
-     *         show_rss: bool
+     *         show_rss: bool,
+     *         custom_label_left: string|null,
+     *         custom_label_width: string|null,
+     *         custom_viewport_left: string|null,
+     *         custom_viewport_right: string|null
      *     },
      *     items: array<int, array{type: string, label: string|null, text: string, url: string|null}>
      * }

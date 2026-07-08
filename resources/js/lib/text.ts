@@ -9,7 +9,13 @@ export function fitTextToLength(text: string, options: FitTextOptions): number {
     const normalizedLength = text.trim().length;
     const overflow = Math.max(0, normalizedLength - options.threshold);
 
-    return Math.max(options.minSize, Math.min(options.maxSize, options.maxSize - overflow * options.shrinkPerCharacter));
+    return Math.max(
+        options.minSize,
+        Math.min(
+            options.maxSize,
+            options.maxSize - overflow * options.shrinkPerCharacter,
+        ),
+    );
 }
 
 type FitTextWidthOptions = {
@@ -20,7 +26,10 @@ type FitTextWidthOptions = {
     fontWeight?: string;
 };
 
-export function fitTextToWidth(text: string, options: FitTextWidthOptions): number {
+export function fitTextToWidth(
+    text: string,
+    options: FitTextWidthOptions,
+): number {
     if (typeof document === 'undefined' || options.maxWidth <= 0) {
         return options.minSize;
     }

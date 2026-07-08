@@ -180,6 +180,14 @@ Use the admin dashboard to manage messages, RSS feeds, moderators, and appearanc
 https://your-domain.example/ticker-admin
 ```
 
+Ticker style PNG files can be added to:
+
+```text
+public/ticker-styles
+```
+
+The dashboard scans this folder automatically and lists the PNG files in the ticker style dropdown.
+
 ## Quality checks
 
 The current codebase passes linting, type analysis, production build, and the test suite.
@@ -210,4 +218,5 @@ php artisan test
 - Accept public text submissions
 - Pull and rotate RSS feeds
 - Configure animation, colors, layout, and chroma key
+- Select ticker styles from PNG files
 - Manage moderators
