@@ -218,7 +218,10 @@ test('self hosted themes can be submitted to the official catalog', function () 
     config(['ticker.themes.official_catalog_url' => 'https://ticker.norrnet.online/themes']);
 
     Http::fake([
-        'https://ticker.norrnet.online/themes/submissions' => Http::response([], 302),
+        'https://ticker.norrnet.online/themes/submissions' => Http::response([
+            'status' => 'queued',
+            'theme_slug' => 'dusk',
+        ], 201),
     ]);
 
     createTickerThemeFixture('dusk');
@@ -230,7 +233,8 @@ test('self hosted themes can be submitted to the official catalog', function () 
 
     Http::assertSent(function ($request): bool {
         return $request->url() === 'https://ticker.norrnet.online/themes/submissions'
-            && $request->method() === 'POST';
+            && $request->method() === 'POST'
+            && $request->hasHeader('Accept', 'application/json');
     });
 
     $submission = ThemeSubmission::query()->firstOrFail();

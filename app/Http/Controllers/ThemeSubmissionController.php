@@ -30,7 +30,7 @@ class ThemeSubmissionController extends Controller
         ]);
     }
 
-    public function store(StoreThemeSubmissionRequest $request, TickerStyleRepository $tickerStyles): RedirectResponse
+    public function store(StoreThemeSubmissionRequest $request, TickerStyleRepository $tickerStyles): RedirectResponse|JsonResponse
     {
         $this->assertOfficialCatalogHost();
 
@@ -41,24 +41,18 @@ class ThemeSubmissionController extends Controller
         $themeSlug = Str::slug($themeName);
 
         if ($themeSlug === '') {
-            return back()->withErrors([
-                'theme_name' => 'The theme name must contain at least one letter or number.',
-            ]);
+            return $this->themeSubmissionError($request, 'theme_name', 'The theme name must contain at least one letter or number.');
         }
 
         if ($tickerStyles->existsTheme($themeSlug)) {
-            return back()->withErrors([
-                'theme_name' => 'That theme already exists in the official catalog.',
-            ]);
+            return $this->themeSubmissionError($request, 'theme_name', 'That theme already exists in the official catalog.');
         }
 
         if (ThemeSubmission::query()
             ->where('theme_slug', $themeSlug)
             ->where('status', 'pending')
             ->exists()) {
-            return back()->withErrors([
-                'theme_name' => 'A submission with that theme name is already pending.',
-            ]);
+            return $this->themeSubmissionError($request, 'theme_name', 'A submission with that theme name is already pending.');
         }
 
         try {
@@ -66,9 +60,7 @@ class ThemeSubmissionController extends Controller
         } catch (\RuntimeException $exception) {
             $errorKey = ! empty($validated['theme_url']) ? 'theme_url' : 'theme_zip';
 
-            return back()->withErrors([
-                $errorKey => $exception->getMessage(),
-            ]);
+            return $this->themeSubmissionError($request, $errorKey, $exception->getMessage());
         }
 
         ThemeSubmission::query()->create([
@@ -83,6 +75,13 @@ class ThemeSubmissionController extends Controller
             'status' => 'pending',
             'notes' => trim($validated['notes'] ?? '') ?: null,
         ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'queued',
+                'theme_slug' => $themeSlug,
+            ], 201);
+        }
 
         return redirect()->route('themes.submitted');
     }
@@ -470,6 +469,7 @@ class ThemeSubmissionController extends Controller
         $submissionUrl = $officialCatalogUrl.'/submissions';
 
         $response = Http::timeout(30)
+            ->acceptJson()
             ->attach('theme_zip', File::get($archivePath), basename($archivePath))
             ->post($submissionUrl, [
                 'theme_name' => $themeName,
@@ -478,7 +478,7 @@ class ThemeSubmissionController extends Controller
                 'submitter_email' => $this->userEmail(Auth::user()),
             ]);
 
-        return $response->successful() || $response->status() >= 300 && $response->status() < 400;
+        return $response->successful();
     }
 
     private function userName(mixed $user): string
@@ -493,5 +493,24 @@ class ThemeSubmissionController extends Controller
         $email = data_get($user, 'email');
 
         return is_string($email) ? $email : '';
+    }
+
+    private function themeSubmissionError(
+        StoreThemeSubmissionRequest $request,
+        string $field,
+        string $message,
+    ): RedirectResponse|JsonResponse {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => $message,
+                'errors' => [
+                    $field => [$message],
+                ],
+            ], 422);
+        }
+
+        return back()->withErrors([
+            $field => $message,
+        ]);
     }
 }
