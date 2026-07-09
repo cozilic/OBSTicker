@@ -24,13 +24,14 @@ class TickerThemeController extends Controller
         $themes = $tickerStyles->paginateDetailed(10);
 
         if (request()->routeIs('themes.*')) {
-            $themes = $this->paginateThemeItems($this->filterApprovedThemes(
-                $this->attachSubmissionState([
-                    'data' => $tickerStyles->allDetailed(),
-                    'links' => [],
-                    'meta' => [],
-                ])['data'],
-            ), 10);
+            $allThemes = $this->attachSubmissionState(
+                $this->paginateThemeItems($tickerStyles->allDetailed()),
+            );
+
+            $themes = $this->paginateThemeItems(
+                $this->filterApprovedThemes($allThemes['data']),
+                10,
+            );
 
             return Inertia::render('themes/index', [
                 'themes' => $themes,
@@ -186,7 +187,16 @@ class TickerThemeController extends Controller
 
     /**
      * @param array{
-     *     data: list<array{slug: string, value: string, label: string, url: string, author: string|null, downloadUrl: string}>,
+     *     data: list<array{
+     *         slug: string,
+     *         value: string,
+     *         label: string,
+     *         url: string,
+     *         author: string|null,
+     *         downloadUrl?: string,
+     *         submissionStatus?: string|null,
+     *         submissionRejectionReason?: string|null
+     *     }>,
      *     links: list<array{url: string|null, label: string, active: bool}>,
      *     meta: array{
      *         current_page: int,
@@ -209,9 +219,9 @@ class TickerThemeController extends Controller
      *         label: string,
      *         url: string,
      *         author: string|null,
-     *         downloadUrl: string,
-     *         submissionStatus: string|null,
-     *         submissionRejectionReason: string|null
+     *         downloadUrl?: string,
+     *         submissionStatus?: string|null,
+     *         submissionRejectionReason?: string|null
      *     }>,
      *     links: list<array{url: string|null, label: string, active: bool}>,
      *     meta: array{
@@ -231,13 +241,12 @@ class TickerThemeController extends Controller
      */
     private function attachSubmissionState(array $themes): array
     {
+        $themeSlugs = $this->themeSlugs($themes['data']);
         $submissions = ThemeSubmission::query()
-            ->whereIn('theme_slug', collect($themes['data'])->pluck('slug')->all())
+            ->whereIn('theme_slug', $themeSlugs)
             ->get()
             ->keyBy('theme_slug');
-        $officialSubmissionStates = $this->fetchOfficialSubmissionStates(
-            collect($themes['data'])->pluck('slug')->all(),
-        );
+        $officialSubmissionStates = $this->fetchOfficialSubmissionStates($themeSlugs);
 
         $themes['data'] = array_map(
             static function (array $theme) use ($submissions, $officialSubmissionStates): array {
@@ -263,9 +272,9 @@ class TickerThemeController extends Controller
      *     label: string,
      *     url: string,
      *     author: string|null,
-     *     downloadUrl: string,
-     *     submissionStatus: string|null,
-     *     submissionRejectionReason: string|null
+     *     downloadUrl?: string,
+     *     submissionStatus?: string|null,
+     *     submissionRejectionReason?: string|null
      * }> $themes
      * @return list<array{
      *     slug: string,
@@ -273,16 +282,16 @@ class TickerThemeController extends Controller
      *     label: string,
      *     url: string,
      *     author: string|null,
-     *     downloadUrl: string,
-     *     submissionStatus: string|null,
-     *     submissionRejectionReason: string|null
+     *     downloadUrl?: string,
+     *     submissionStatus?: string|null,
+     *     submissionRejectionReason?: string|null
      * }>
      */
     private function filterApprovedThemes(array $themes): array
     {
         return array_values(array_filter(
             $themes,
-            static fn (array $theme): bool => $theme['submissionStatus'] === 'approved',
+            static fn (array $theme): bool => ($theme['submissionStatus'] ?? null) === 'approved',
         ));
     }
 
@@ -326,9 +335,12 @@ class TickerThemeController extends Controller
                     continue;
                 }
 
+                $status = $payload['status'] ?? null;
+                $rejectionReason = $payload['rejection_reason'] ?? null;
+
                 $states[$slug] = [
-                    'status' => is_string($payload['status'] ?? null) ? $payload['status'] : null,
-                    'rejection_reason' => is_string($payload['rejection_reason'] ?? null) ? $payload['rejection_reason'] : null,
+                    'status' => $status !== null ? (string) $status : null,
+                    'rejection_reason' => $rejectionReason !== null ? (string) $rejectionReason : null,
                 ];
             } catch (\Throwable $exception) {
                 report($exception);
@@ -339,14 +351,32 @@ class TickerThemeController extends Controller
     }
 
     /**
+     * @param  list<array{slug: string, value: string, label: string, url: string, author: string|null, downloadUrl?: string}>  $themes
+     * @return list<string>
+     */
+    private function themeSlugs(array $themes): array
+    {
+        $slugs = [];
+
+        foreach ($themes as $theme) {
+            $slug = $theme['slug'];
+            if ($slug !== '') {
+                $slugs[] = $slug;
+            }
+        }
+
+        return $slugs;
+    }
+
+    /**
      * @param list<array{
      *     slug: string,
      *     value: string,
      *     label: string,
      *     url: string,
      *     author: string|null,
-     *     submissionStatus: string|null,
-     *     submissionRejectionReason: string|null
+     *     submissionStatus?: string|null,
+     *     submissionRejectionReason?: string|null
      * }> $themes
      * @return array{
      *     data: list<array{
@@ -355,9 +385,9 @@ class TickerThemeController extends Controller
      *         label: string,
      *         url: string,
      *         author: string|null,
-     *         submissionStatus: string|null,
-     *         submissionRejectionReason: string|null,
-     *         downloadUrl: string
+     *         downloadUrl: string,
+     *         submissionStatus?: string|null,
+     *         submissionRejectionReason?: string|null
      *     }>,
      *     links: list<array{url: string|null, label: string, active: bool}>,
      *     meta: array{

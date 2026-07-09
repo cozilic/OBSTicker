@@ -121,6 +121,9 @@ class ThemeSubmissionController extends Controller
 
         $submissionResult = $this->isOfficialCatalogHost();
         $storedArchivePath = null;
+        $user = Auth::user();
+        $submitterName = $this->userName($user);
+        $submitterEmail = $this->userEmail($user);
 
         try {
             $archivePath = $tickerStyles->createThemeZip($slug);
@@ -130,7 +133,7 @@ class ThemeSubmissionController extends Controller
                 $submissionResult = $this->submitArchiveToOfficialCatalog(
                     $archivePath,
                     $themeData['label'],
-                    $themeData['author'] ?? (Auth::user()?->name ?? 'Unknown'),
+                    $themeData['author'] ?? $submitterName,
                 );
             }
         } catch (\Throwable $exception) {
@@ -150,9 +153,7 @@ class ThemeSubmissionController extends Controller
         }
 
         if ($submissionResult === false) {
-            if (is_string($storedArchivePath)) {
-                Storage::disk('local')->delete($storedArchivePath);
-            }
+            Storage::disk('local')->delete($storedArchivePath);
 
             return back()->withErrors([
                 'submission' => 'The theme could not be submitted to the official catalog.',
@@ -163,9 +164,9 @@ class ThemeSubmissionController extends Controller
             ['theme_slug' => $slug],
             [
                 'theme_name' => $themeData['label'],
-                'author_name' => $themeData['author'] ?? (Auth::user()?->name ?? 'Unknown'),
-                'submitter_name' => trim(Auth::user()?->name ?? '') ?: null,
-                'submitter_email' => trim(Auth::user()?->email ?? '') ?: null,
+                'author_name' => $themeData['author'] ?? $submitterName,
+                'submitter_name' => trim($submitterName) ?: null,
+                'submitter_email' => trim($submitterEmail) ?: null,
                 'source_type' => 'local',
                 'source_url' => null,
                 'archive_path' => $storedArchivePath,
@@ -473,10 +474,24 @@ class ThemeSubmissionController extends Controller
             ->post($submissionUrl, [
                 'theme_name' => $themeName,
                 'author_name' => $authorName,
-                'submitter_name' => Auth::user()?->name ?? '',
-                'submitter_email' => Auth::user()?->email ?? '',
+                'submitter_name' => $this->userName(Auth::user()),
+                'submitter_email' => $this->userEmail(Auth::user()),
             ]);
 
         return $response->successful() || $response->status() >= 300 && $response->status() < 400;
+    }
+
+    private function userName(mixed $user): string
+    {
+        $name = data_get($user, 'name');
+
+        return is_string($name) && $name !== '' ? $name : 'Unknown';
+    }
+
+    private function userEmail(mixed $user): string
+    {
+        $email = data_get($user, 'email');
+
+        return is_string($email) ? $email : '';
     }
 }
