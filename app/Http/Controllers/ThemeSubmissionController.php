@@ -290,12 +290,6 @@ class ThemeSubmissionController extends Controller
             ]);
         }
 
-        if ($tickerStyles->existsTheme($themeSubmission->theme_slug)) {
-            return back()->withErrors([
-                'submission' => 'That theme already exists in the official catalog.',
-            ]);
-        }
-
         $archiveAbsolutePath = Storage::disk('local')->path($themeSubmission->archive_path);
         if (! is_file($archiveAbsolutePath)) {
             return back()->withErrors([

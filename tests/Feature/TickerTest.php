@@ -281,6 +281,36 @@ test('owners can review theme submissions', function () {
         ->and(Storage::disk('local')->exists($submission->archive_path))->toBeFalse();
 });
 
+test('owners can approve a submission even when the theme slug already exists', function () {
+    config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
+
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'email' => config('ticker.owner_email'),
+    ]);
+
+    createTickerThemeFixture('aurora');
+    $submission = ThemeSubmission::query()->create([
+        'theme_name' => 'Aurora',
+        'theme_slug' => 'aurora',
+        'author_name' => 'Alex Example',
+        'source_type' => 'upload',
+        'archive_path' => 'theme-submissions/aurora.zip',
+        'status' => 'pending',
+    ]);
+
+    Storage::disk('local')->put('theme-submissions/aurora.zip', File::get(createThemeZipFixture('aurora', 'Alex Example')));
+
+    $this->actingAs($owner)
+        ->post(route('ticker.theme-submissions.approve', ['themeSubmission' => $submission]))
+        ->assertRedirect();
+
+    $submission->refresh();
+
+    expect($submission->status)->toBe('approved')
+        ->and($submission->published_theme_slug)->toBe('aurora');
+});
+
 test('theme approval reports unexpected import failures instead of crashing', function () {
     config(['ticker.themes.official_catalog_url' => config('app.url').'/themes']);
 
