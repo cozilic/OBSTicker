@@ -132,6 +132,34 @@ function createThemeZipUploadFile(string $themeName = 'aurora', string $author =
     );
 }
 
+function createTransparentPngUploadFile(
+    string $filename,
+    int $width,
+    int $height,
+    int $opaqueStartX,
+    int $opaqueEndX,
+): UploadedFile {
+    $path = tempnam(sys_get_temp_dir(), 'ticker-theme-');
+    if ($path === false) {
+        throw new RuntimeException('Unable to create a temporary image file.');
+    }
+
+    $pngPath = $path.'.png';
+    File::delete($path);
+
+    $image = imagecreatetruecolor($width, $height);
+    imagesavealpha($image, true);
+    imagealphablending($image, false);
+    $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
+    imagefill($image, 0, 0, $transparent);
+    $opaque = imagecolorallocatealpha($image, 255, 255, 255, 0);
+    imagefilledrectangle($image, $opaqueStartX, 0, $opaqueEndX, $height - 1, $opaque);
+    imagepng($image, $pngPath);
+    imagedestroy($image);
+
+    return new UploadedFile($pngPath, $filename, 'image/png', null, true);
+}
+
 test('ticker admin redirects to registration before the first admin exists', function () {
     $this->get(route('ticker.dashboard'))
         ->assertRedirect(route('register'));
@@ -1243,6 +1271,36 @@ test('user can stitch custom images into a theme directory', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('ticker/themes')
             ->where('themes.data', fn (mixed $themes): bool => collect($themes)->contains(fn (array $theme): bool => $theme['slug'] === 'dusk')));
+});
+
+test('stitching trims transparent padding before calculating theme geometry', function () {
+    $user = User::factory()->create();
+
+    $titleFile = createTransparentPngUploadFile('title.png', 12, 4, 2, 11);
+    $contentFile = createTransparentPngUploadFile('content.png', 12, 4, 0, 11);
+    $endFile = createTransparentPngUploadFile('end.png', 12, 4, 0, 7);
+
+    try {
+        $this->actingAs($user)
+            ->post(route('ticker.settings.stitch'), [
+                'theme_name' => 'Trimmed',
+                'author_name' => 'Patrik Forsberg',
+                'title_image' => $titleFile,
+                'content_image' => $contentFile,
+                'end_image' => $endFile,
+            ])
+            ->assertRedirect(route('ticker.themes.index'));
+
+        $settings = TickerSetting::current($user);
+
+        expect($settings->custom_label_width)->toBe('4.1667%')
+            ->and($settings->custom_viewport_left)->toBe('4.1667%')
+            ->and($settings->custom_viewport_right)->toBe('3.3333%');
+    } finally {
+        File::delete($titleFile->getRealPath());
+        File::delete($contentFile->getRealPath());
+        File::delete($endFile->getRealPath());
+    }
 });
 
 test('stitch failures return a validation error instead of a 500', function () {

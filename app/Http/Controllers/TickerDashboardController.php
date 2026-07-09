@@ -7,6 +7,7 @@ use App\Models\RssFeed;
 use App\Models\TickerMessage;
 use App\Models\TickerSetting;
 use App\Models\User;
+use App\Services\ThemeImageStitcher;
 use App\Services\TickerStyleRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -128,7 +129,7 @@ class TickerDashboardController extends Controller
         return Inertia::render('ticker/theme');
     }
 
-    public function stitch(Request $request): RedirectResponse
+    public function stitch(Request $request, ThemeImageStitcher $themeImageStitcher): RedirectResponse
     {
         $request->validate([
             'theme_name' => ['required', 'string', 'max:80'],
@@ -166,67 +167,25 @@ class TickerDashboardController extends Controller
                 return back()->withErrors(['author_name' => 'The author name must contain at least one letter or number.']);
             }
 
-            $leftImg = imagecreatefromstring((string) file_get_contents($leftFile->getRealPath()));
-            $middleImg = imagecreatefromstring((string) file_get_contents($middleFile->getRealPath()));
-            $rightImg = imagecreatefromstring((string) file_get_contents($rightFile->getRealPath()));
+            $stitchMetrics = $themeImageStitcher->stitch(
+                $leftFile->getRealPath(),
+                $middleFile->getRealPath(),
+                $rightFile->getRealPath(),
+            );
 
-            if (! $leftImg || ! $middleImg || ! $rightImg) {
+            if (! is_array($stitchMetrics)) {
                 return back()->withErrors(['stitch' => 'Failed to process images.']);
             }
-
-            $totalWidth = 1920;
-            $height = imagesy($leftImg);
-
-            // Clamp height to a reasonable range
-            $height = max(32, min(512, $height));
-
-            $origLeftWidth = imagesx($leftImg);
-            $origLeftHeight = imagesy($leftImg);
-            $leftWidth = (int) round($origLeftWidth * ($height / $origLeftHeight));
-
-            $origRightWidth = imagesx($rightImg);
-            $origRightHeight = imagesy($rightImg);
-            $rightWidth = (int) round($origRightWidth * ($height / $origRightHeight));
-
-            // Limit maximum width of left and right parts to 40% of total width
-            $maxPartWidth = (int) ($totalWidth * 0.4);
-            if ($leftWidth > $maxPartWidth) {
-                $leftWidth = $maxPartWidth;
-            }
-            if ($rightWidth > $maxPartWidth) {
-                $rightWidth = $maxPartWidth;
-            }
-
-            $middleWidth = $totalWidth - $leftWidth - $rightWidth;
-
-            // Create transparent target image
-            $stitchedImg = imagecreatetruecolor($totalWidth, $height);
-            imagealphablending($stitchedImg, false);
-            imagesavealpha($stitchedImg, true);
-            $transparent = imagecolorallocatealpha($stitchedImg, 0, 0, 0, 127);
-            if ($transparent !== false) {
-                imagefill($stitchedImg, 0, 0, $transparent);
-            }
-            imagealphablending($stitchedImg, true);
-
-            // Copy and resize parts
-            imagecopyresampled($stitchedImg, $leftImg, 0, 0, 0, 0, $leftWidth, $height, $origLeftWidth, $origLeftHeight);
-            imagecopyresampled($stitchedImg, $middleImg, $leftWidth, 0, 0, 0, $middleWidth, $height, imagesx($middleImg), imagesy($middleImg));
-            imagecopyresampled($stitchedImg, $rightImg, $totalWidth - $rightWidth, 0, 0, 0, $rightWidth, $height, $origRightWidth, $origRightHeight);
 
             /** @var User $user */
             $user = Auth::user();
             $owner = User::query()->findOrFail($user->ownerAccountId());
             $settings = TickerSetting::current($owner);
 
-            $computedCustomLabelLeft = '0%';
-            $computedCustomLabelWidth = round(($leftWidth / $totalWidth) * 100, 4).'%';
-            $computedCustomViewportLeft = round(($leftWidth / $totalWidth) * 100, 4).'%';
-            $computedCustomViewportRight = round(($rightWidth / $totalWidth) * 100, 4).'%';
-            $customLabelLeft = $request->string('custom_label_left')->toString() ?: $computedCustomLabelLeft;
-            $customLabelWidth = $request->string('custom_label_width')->toString() ?: $computedCustomLabelWidth;
-            $customViewportLeft = $request->string('custom_viewport_left')->toString() ?: $computedCustomViewportLeft;
-            $customViewportRight = $request->string('custom_viewport_right')->toString() ?: $computedCustomViewportRight;
+            $customLabelLeft = $request->string('custom_label_left')->toString() ?: $stitchMetrics['custom_label_left'];
+            $customLabelWidth = $request->string('custom_label_width')->toString() ?: $stitchMetrics['custom_label_width'];
+            $customViewportLeft = $request->string('custom_viewport_left')->toString() ?: $stitchMetrics['custom_viewport_left'];
+            $customViewportRight = $request->string('custom_viewport_right')->toString() ?: $stitchMetrics['custom_viewport_right'];
             $createdAt = now()->toDateTimeString();
 
             $themeDir = public_path("ticker-styles/{$themeSlug}");
@@ -275,11 +234,6 @@ class TickerDashboardController extends Controller
                 'custom_viewport_left' => $customViewportLeft,
                 'custom_viewport_right' => $customViewportRight,
             ]);
-
-            imagedestroy($leftImg);
-            imagedestroy($middleImg);
-            imagedestroy($rightImg);
-            imagedestroy($stitchedImg);
 
             Inertia::flash('toast', [
                 'type' => 'success',

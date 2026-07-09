@@ -15,6 +15,8 @@ class TickerStyleRepository
 
     public const COMPILED_DIRECTORY = 'ticker-styles/compiled';
 
+    public function __construct(private ThemeImageStitcher $themeImageStitcher) {}
+
     /**
      * @return list<array{value: string, label: string, url: string}>
      */
@@ -405,7 +407,7 @@ class TickerStyleRepository
 
                 if ($needsCompile) {
                     try {
-                        $this->stitchTheme($titleFile, $contentFile, $endFile, $outputPng, $outputJson, $themeJson);
+                        $this->themeImageStitcher->stitch($titleFile, $contentFile, $endFile, $outputPng, $outputJson, $themeJson);
                         $this->deleteLegacyCompiledFiles($item);
                     } catch (\Throwable $exception) {
                         report($exception);
@@ -426,82 +428,6 @@ class TickerStyleRepository
         }
 
         return null;
-    }
-
-    private function stitchTheme(string $leftPath, string $middlePath, string $rightPath, string $outputPng, string $outputJson, string $themeJson): bool
-    {
-        $leftImg = imagecreatefromstring((string) file_get_contents($leftPath));
-        $middleImg = imagecreatefromstring((string) file_get_contents($middlePath));
-        $rightImg = imagecreatefromstring((string) file_get_contents($rightPath));
-
-        if (! $leftImg || ! $middleImg || ! $rightImg) {
-            return false;
-        }
-
-        $totalWidth = 1920;
-        $height = imagesy($leftImg);
-
-        $height = max(32, min(512, $height));
-
-        $origLeftWidth = imagesx($leftImg);
-        $origLeftHeight = imagesy($leftImg);
-        $leftWidth = (int) round($origLeftWidth * ($height / $origLeftHeight));
-
-        $origRightWidth = imagesx($rightImg);
-        $origRightHeight = imagesy($rightImg);
-        $rightWidth = (int) round($origRightWidth * ($height / $origRightHeight));
-
-        $maxPartWidth = (int) ($totalWidth * 0.4);
-        if ($leftWidth > $maxPartWidth) {
-            $leftWidth = $maxPartWidth;
-        }
-        if ($rightWidth > $maxPartWidth) {
-            $rightWidth = $maxPartWidth;
-        }
-
-        $middleWidth = $totalWidth - $leftWidth - $rightWidth;
-
-        $stitchedImg = imagecreatetruecolor($totalWidth, $height);
-        imagealphablending($stitchedImg, false);
-        imagesavealpha($stitchedImg, true);
-        $transparent = imagecolorallocatealpha($stitchedImg, 0, 0, 0, 127);
-        if ($transparent !== false) {
-            imagefill($stitchedImg, 0, 0, $transparent);
-        }
-        imagealphablending($stitchedImg, true);
-
-        imagecopyresampled($stitchedImg, $leftImg, 0, 0, 0, 0, $leftWidth, $height, $origLeftWidth, $origLeftHeight);
-        imagecopyresampled($stitchedImg, $middleImg, $leftWidth, 0, 0, 0, $middleWidth, $height, imagesx($middleImg), imagesy($middleImg));
-        imagecopyresampled($stitchedImg, $rightImg, $totalWidth - $rightWidth, 0, 0, 0, $rightWidth, $height, $origRightWidth, $origRightHeight);
-
-        imagepng($stitchedImg, $outputPng);
-
-        imagedestroy($leftImg);
-        imagedestroy($middleImg);
-        imagedestroy($rightImg);
-        imagedestroy($stitchedImg);
-
-        $customLabelLeft = '0%';
-        $customLabelWidth = round(($leftWidth / $totalWidth) * 100, 4).'%';
-        $customViewportLeft = round(($leftWidth / $totalWidth) * 100, 4).'%';
-        $customViewportRight = round(($rightWidth / $totalWidth) * 100, 4).'%';
-
-        $meta = [
-            'custom_label_left' => $customLabelLeft,
-            'custom_label_width' => $customLabelWidth,
-            'custom_viewport_left' => $customViewportLeft,
-            'custom_viewport_right' => $customViewportRight,
-        ];
-        if (is_file($themeJson)) {
-            $originalData = json_decode((string) file_get_contents($themeJson), true);
-            if (is_array($originalData)) {
-                $meta = array_merge($meta, $originalData);
-            }
-        }
-
-        file_put_contents($outputJson, (string) json_encode($meta, JSON_PRETTY_PRINT));
-
-        return true;
     }
 
     public function exists(string $filename): bool
