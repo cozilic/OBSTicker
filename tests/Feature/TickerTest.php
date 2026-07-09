@@ -439,6 +439,13 @@ test('guests can browse the public themes catalog', function () {
     File::deleteDirectory(public_path('ticker-styles'));
 
     createTickerThemeFixture('dusk');
+    config(['ticker.themes.official_catalog_url' => 'https://ticker.norrnet.online/themes']);
+    Http::fake([
+        'https://ticker.norrnet.online/themes/submissions/dusk/status' => Http::response([
+            'status' => 'approved',
+            'rejection_reason' => null,
+        ]),
+    ]);
     ThemeSubmission::query()->create([
         'theme_name' => 'Dusk',
         'theme_slug' => 'dusk',
