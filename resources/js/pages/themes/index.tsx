@@ -310,11 +310,13 @@ export default function PublicThemes({ themes }: Props) {
                                     key={theme.slug}
                                     className="overflow-hidden rounded-lg border-white/10 bg-white/[0.04]"
                                 >
-                                    <img
-                                        src={theme.url}
-                                        alt={theme.label}
-                                        className="aspect-video w-full object-cover"
-                                    />
+                                    <div className="aspect-[4/1] w-full overflow-hidden bg-white/[0.04]">
+                                        <img
+                                            src={theme.url}
+                                            alt={theme.label}
+                                            className="bg-checker block h-full w-full object-contain"
+                                        />
+                                    </div>
                                     <CardHeader>
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
