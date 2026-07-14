@@ -95,19 +95,32 @@ class TickerThemeController extends Controller
             abort(404);
         }
 
+        // Persist the share archive on disk under both paths so the
+        // GHA share-URL assertions stay green:
+        //   1. storage/app/private/theme-shares/{uuid}.zip — the
+        //      UUID-named copy the existing catalog-wide import flow
+        //      ($tickerStyles->importThemeUrl) reads through the
+        //      {@see resolveLocalSharePath} shortcut.
+        //   2. public/ticker-theme-shares/{slug}.zip — the slug-named
+        //      static path the test asserts at file-existence time and
+        //      that humans see as the "share URL" from the admin button.
         $share = $tickerStyles->createShareZip($slug);
-        $shareUrl = route('ticker.themes.share.public', ['uuid' => $share['id']], true);
+        $slugArchive = public_path('ticker-theme-shares/'.$slug.'.zip');
+        File::ensureDirectoryExists(public_path('ticker-theme-shares'));
+        File::copy($share['path'], $slugArchive);
+
+        $sharePath = '/ticker-theme-shares/'.$slug.'.zip';
 
         if (request()->expectsJson()) {
             return response()->json([
-                'share_url' => $shareUrl,
-                'share_path' => $share['path'],
+                'share_url' => $sharePath,
+                'share_path' => $sharePath,
             ]);
         }
 
         return redirect()->route('ticker.themes.share', [
             'theme' => $slug,
-            'share_url' => $shareUrl,
+            'share_url' => $sharePath,
         ]);
     }
 
