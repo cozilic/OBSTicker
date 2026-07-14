@@ -180,6 +180,10 @@ const messages = {
             'Generate a share URL to create a public zip file.',
         shareUrlReady: 'Share URL ready',
         shareUrlError: 'Unable to generate a share URL.',
+        // Backfill for the existing lookup in
+        // resources/js/pages/ticker/themes.tsx — previously orphaned
+        // so typescript's strict MessageKey union flagged it as TS2345.
+        shareUrlFailed: 'Unable to generate a share URL.',
         copyLink: 'Copy link',
         createdBy: 'Created by',
         themeListEmpty: 'No themes found yet.',
@@ -214,6 +218,59 @@ const messages = {
         // The right-column "Label region" card was scoped out to
         // match the minimal spec — keep this key minimal too.
         labelReset: 'Reset label box',
+        // Theme Preview (public catalog at /themes/{slug}) —
+        // a faithful live-ticker shell plus a metadata breakdown
+        // card so visitors can see exactly how the theme renders in
+        // OBS instead of a static zoomed PNG.
+        themePreviewAuthorLine:
+            'Built by {author}. Preview how it lands on a real OBS ticker below.',
+        themePreviewDescriptionPublic:
+            'Preview how this OBS ticker theme renders on a real broadcast — the shell cycles a sample headline and content strip using the theme’s meta coordinates.',
+        themePreviewMetaTitle: 'Theme composition',
+        themePreviewMetaDescription:
+            'How the meta.json splits the canvas into title, content, and end regions. The numbers below are read directly from the compiled theme’s metadata, so any drift between the file and the live ticker is visible at a glance.',
+        themePreviewMetricCuts: 'Cuts',
+        themePreviewMetricBBox: 'Bounding box',
+        themePreviewMetricBBoxValue:
+            '{left}% L · {right}% R · {top}% T · {bottom}% B',
+        themePreviewMetricLabelRect: 'Label rect',
+        themePreviewMetricLabelRectValue: '{left} pos · {width} wide',
+        themePreviewMetricStamps: 'Title / End stamp',
+        themePreviewMetricStampsValue: 'title {title} · end {end}',
+        themePreviewCutDiagram: 'Cut diagram',
+        themePreviewCutDiagramLabel:
+            'Title stamp spans 0–{split1}%, content runs {split1}–{split2}%, end stamp spans {split2}–100%.',
+        themePreviewDynamicStretch: 'Dynamic content stretch',
+        themePreviewDynamicStretchOn: 'Enabled',
+        themePreviewDynamicStretchOff: 'Disabled',
+        themePreviewDynamicStretchDescription:
+            'When enabled, the content slot extends all the way to the bounding-box right edge and the end region collapses to zero width. The preview is rendering {samples} sample scrolls.',
+        themePreviewDetailsTitle: 'Theme details',
+        themePreviewDetailsDescription:
+            'Author, file name, and quick links to the compiled and source artwork.',
+        themePreviewAnonymousAuthor: 'Anonymous author',
+        themePreviewCreatedAt: 'Created {date}',
+        themePreviewDynamicStretchTip:
+            'The content strip will swallow the entire viewport on air — confirm that the source design supports the stretch before shipping.',
+        themePreviewFilename: 'File names',
+        themePreviewOpenRaw: 'Open compiled PNG',
+        themePreviewOpenSource: 'Open source parts',
+        themePreviewPartsTitle: 'Source parts',
+        themePreviewPartsDescription:
+            'The three PNG files that shipped with the {slug} theme, rebuildable into a stage with the theme builder.',
+        themePreviewPartTitle: 'Title',
+        themePreviewPartContent: 'Content',
+        themePreviewPartEnd: 'End',
+        themePreviewSampleHeadline1: 'BREAKING NEWS',
+        themePreviewSampleHeadline2: 'SPORTS LIVE',
+        themePreviewSampleHeadline3: 'TRY THE THEME',
+        themePreviewSampleText1:
+            'Global markets reach record highs after a quarter of aggressive tech IPOs — analysts expect the rally to continue through the week as earnings roll in.',
+        themePreviewSampleText2:
+            'Local heroes clinch the season title in the final seconds of extra time, sparking celebrations across the stadium and a standing-ovation from the home crowd.',
+        themePreviewSampleText3:
+            'You are looking at a live preview of this theme. Switch samples from the toolbar below to see how the label and viewport slots react to different captions.',
+        themePreviewHoverZoom: 'Hover to zoom',
     },
     sv: {
         activeRss: 'Aktiva RSS',
@@ -392,6 +449,7 @@ const messages = {
             'Skapa en delnings-URL för att göra zip-filen publik.',
         shareUrlReady: 'Delnings-URL klar',
         shareUrlError: 'Det gick inte att skapa en delnings-URL.',
+        shareUrlFailed: 'Det gick inte att skapa en delnings-URL.',
         copyLink: 'Kopiera länk',
         createdBy: 'Skapat av',
         themeListEmpty: 'Inga teman hittades ännu.',
@@ -423,10 +481,59 @@ const messages = {
         bboxBandRight: 'Beskär {pct}% från höger',
         bboxReset: 'Återställ beskär box',
         labelReset: 'Återställ etikettruta',
+        themePreviewAuthorLine:
+            'Skapad av {author}. Se hur temat landar på en riktig OBS-ticker nedan.',
+        themePreviewDescriptionPublic:
+            'Se hur detta OBS-ticker-tema ser ut på en riktig sändning — skalet växlar mellan exempelrubrik och innehåll med hjälp av temats metadata-koordinater.',
+        themePreviewMetaTitle: 'Temats uppbyggnad',
+        themePreviewMetaDescription:
+            'Hur meta.json delar upp duken i titel-, innehålls- och slut-regioner. Siffrorna läses direkt från det kompilerade temats metadata, så eventuell drift mellan fil och sändning syns direkt.',
+        themePreviewMetricCuts: 'Snitt',
+        themePreviewMetricBBox: 'Beskärningsbox',
+        themePreviewMetricBBoxValue:
+            '{left}% V · {right}% H · {top}% U · {bottom}% N',
+        themePreviewMetricLabelRect: 'Etikettrektangel',
+        themePreviewMetricLabelRectValue: '{left} position · {width} bredd',
+        themePreviewMetricStamps: 'Titel- / slutstämpel',
+        themePreviewMetricStampsValue: 'titel {title} · slut {end}',
+        themePreviewCutDiagram: 'Snittdiagram',
+        themePreviewCutDiagramLabel:
+            'Titelstämpeln täcker 0–{split1}%, innehållet löper {split1}–{split2}%, slutstämpeln {split2}–100%.',
+        themePreviewDynamicStretch: 'Dynamisk innehållssträcka',
+        themePreviewDynamicStretchOn: 'På',
+        themePreviewDynamicStretchOff: 'Av',
+        themePreviewDynamicStretchDescription:
+            'När det är på sträcker sig innehålls-sektionen hela vägen till beskärningens högerkant och slut-regionen kollapsar till noll bredd. Förhandsvisningen rullar {samples} exempel.',
+        themePreviewDetailsTitle: 'Temainformation',
+        themePreviewDetailsDescription:
+            'Skapare, filnamn och snabblänkar till kompilerat resultat och källbilder.',
+        themePreviewAnonymousAuthor: 'Anonym skapare',
+        themePreviewCreatedAt: 'Skapad {date}',
+        themePreviewDynamicStretchTip:
+            'Innehålls-remsan kommer att ta hela viewporten i sändning — kontrollera att källdesignen klarar sträckningen innan du publicerar.',
+        themePreviewFilename: 'Filnamn',
+        themePreviewOpenRaw: 'Öppna kompilerad PNG',
+        themePreviewOpenSource: 'Öppna källbilder',
+        themePreviewPartsTitle: 'Delar',
+        themePreviewPartsDescription:
+            'De tre PNG-filer som levererades med {slug}-temat — kan byggas om till ett nytt skede via temabyggaren.',
+        themePreviewPartTitle: 'Titel',
+        themePreviewPartContent: 'Innehåll',
+        themePreviewPartEnd: 'Slut',
+        themePreviewSampleHeadline1: 'SENASTE NYTT',
+        themePreviewSampleHeadline2: 'SPORT LIVE',
+        themePreviewSampleHeadline3: 'TESTA TEMAT',
+        themePreviewSampleText1:
+            'Globala marknader når nya rekordnivåer efter en kvartal av aggressiva tekniknoteringar — analytiker spår fortsatt uppgång när kvartalsrapporterna rullar in.',
+        themePreviewSampleText2:
+            'Lokala hjältar säkrar säsongstiteln i slutsekunderna av förlängningen, vilket tänder firandet på läktarna och en stående ovation från hemmapubliken.',
+        themePreviewSampleText3:
+            'Du tittar på en live förhandsvisning av detta tema. Växla exempel från verktygsfältet nedan för att se hur etiketten och viewporten svarar på olika bildtexter.',
+        themePreviewHoverZoom: 'Hovra för att zooma',
     },
 } as const;
 
-type MessageKey = keyof typeof messages.en;
+export type MessageKey = keyof typeof messages.en;
 
 /**
  * Format a translation template by replacing `{key}` placeholders with
