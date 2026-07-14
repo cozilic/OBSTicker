@@ -152,6 +152,20 @@ class TickerFeedService
             'message_display_seconds' => $settings->message_display_seconds,
             'poll_interval_seconds' => $settings->poll_interval_seconds,
             'show_rss' => $settings->show_rss,
+            // WYCIWYG thread: these four custom_label_* / custom_viewport_*
+            // strings flow from the legacy 3-file stitch pipeline
+            // (TickerDashboardController::handleLegacyStitch) into the
+            // live ticker so a theme committed via the legacy builder
+            // can position its label + viewport rects without falling
+            // back to alpha-aware heuristics on the title/end PNGs.
+            // The first-pass source-image build uses meta.json-derived
+            // coordinates directly, so these are nullable in that
+            // path; the payload shape always carries them so the JS
+            // consumer can pick whichever source is present.
+            'custom_label_left' => $settings->custom_label_left,
+            'custom_label_width' => $settings->custom_label_width,
+            'custom_viewport_left' => $settings->custom_viewport_left,
+            'custom_viewport_right' => $settings->custom_viewport_right,
         ];
     }
 

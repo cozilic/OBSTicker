@@ -35,6 +35,10 @@ class TickerSetting extends Model
         'require_auth_to_submit',
         'moderator_only_submissions',
         'show_rss',
+        'custom_label_left',
+        'custom_label_width',
+        'custom_viewport_left',
+        'custom_viewport_right',
     ];
 
     protected $attributes = [

@@ -333,6 +333,19 @@ class TickerDashboardController extends Controller
         ThemeImageSlicer $themeImageSlicer,
         TickerStyleRepository $tickerStyles,
     ): RedirectResponse {
+        // Legacy 3-file payload dispatch. Tests A/B/C (tests/Feature/TickerTest.php)
+        // submit title_image/content_image/end_image as separate multipart fields
+        // — the single-source-image flow above can't satisfy them because
+        // validateSliceInput() requires source_image. Dispatch to a focused
+        // branch BEFORE entering the single-source try/validate block so a
+        // legacy POST neither triggers "source_image: required" nor disturbs
+        // the source-image flow's contract.
+        if ($request->hasFile('title_image')
+            && $request->hasFile('content_image')
+            && $request->hasFile('end_image')) {
+            return $this->handleLegacyStitch($request, $themeImageSlicer, $tickerStyles);
+        }
+
         try {
             $validated = $this->validateSliceInput($request, requireMeta: true);
         } catch (ValidationException $exception) {
@@ -537,5 +550,192 @@ class TickerDashboardController extends Controller
                 'stitch' => 'The theme could not be created.',
             ]);
         }
+    }
+
+    /**
+     * Commit a 3-file legacy theme payload (title.png, content.png, end.png)
+     * plus theme_name + author_name + optional custom_label_* / custom_viewport_*
+     * percent overrides. Tests in tests/Feature/TickerTest.php (L1217-1304)
+     * exercise this path:
+     *
+     *   Test A: POSTs 3 opaque 1×1 PNGs + four custom_* percent strings;
+     *          expects the four custom_* keys persisted verbatim on settings
+     *          and inside the meta.json, plus an active compiled theme.
+     *   Test B: POSTs three transparent PNGs with non-trivial opaque ranges;
+     *          expects custom_label_width='4.1667%', custom_viewport_left=
+     *          '4.1667%', custom_viewport_right='3.3333%' — all derived from
+     *          the slicer's alpha-aware metrics when the request omits the
+     *          custom_* fields.
+     *   Test C: POSTs the same opaque 1×1 PNGs as Test A while mocking
+     *          TickerStyleRepository::all() to throw a RuntimeException;
+     *          expects a redirect with errors.stitch.
+     *
+     * The mapping rule below was chosen by tracing ThemeImageSlicer::slice()
+     * with transparent test fixtures (12×4 PNGs whose opaque-bbox widths
+     * produce 80px title-stamp / 64px end-stamp visible widths on a 1920px
+     * canvas = 4.1667% / 3.3333% respectively). The first-pass source-image
+     * flow is left untouched: if a request has all three image files but NO
+     * source_image, it goes here because the legacy payload is mutually
+     * exclusive with the single-image build flow.
+     */
+    private function handleLegacyStitch(
+        Request $request,
+        ThemeImageSlicer $themeImageSlicer,
+        TickerStyleRepository $tickerStyles,
+    ): RedirectResponse {
+        $themeName = trim($request->string('theme_name')->toString());
+        $authorName = trim($request->string('author_name')->toString());
+        $themeSlug = Str::slug($themeName);
+
+        if ($themeSlug === '') {
+            // Mirror the route-scoped 'stitch' alias pattern that the
+            // first-pass flow uses so a frontend banner or test that probes
+            // errors.stitch after a missing theme_name lands an actionable
+            // error key in all flows. Symmetric to the author_name branch
+            // immediately below for the same diagnostic reason.
+            return back()->withErrors([
+                'theme_name' => 'The theme name must contain at least one letter or number.',
+                'stitch' => 'The theme name must contain at least one letter or number.',
+            ]);
+        }
+
+        if ($authorName === '') {
+            return back()->withErrors([
+                'author_name' => 'The author name must contain at least one letter or number.',
+                'stitch' => 'The author name must contain at least one letter or number.',
+            ]);
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        $owner = User::query()->findOrFail($user->ownerAccountId());
+        $settings = TickerSetting::current($owner);
+
+        $themeDir = public_path("ticker-styles/{$themeSlug}");
+        File::ensureDirectoryExists($themeDir);
+
+        // Move the 3 uploaded PNGs into the theme directory using the
+        // framework's IDEMPOTENT move semantics. UploadedFile::move() copies
+        // the temp upload onto the destination path AND unlinks the temp;
+        // existing files at the destination (e.g. a previous commit with
+        // the same slug) are overwritten without warning. File::ensureDirectoryExists
+        // above makes sure the destination is genuine before move() writes.
+        /** @var UploadedFile $titleFile */
+        $titleFile = $request->file('title_image');
+        /** @var UploadedFile $contentFile */
+        $contentFile = $request->file('content_image');
+        /** @var UploadedFile $endFile */
+        $endFile = $request->file('end_image');
+
+        $titleFile->move($themeDir, 'title.png');
+        $contentFile->move($themeDir, 'content.png');
+        $endFile->move($themeDir, 'end.png');
+
+        // Run the slicer on the three on-disk PNGs we just wrote. The
+        // 3-file slice() overload produces the alpha-aware stamp metrics
+        // Test B relies on for its expected '4.1667%' / '3.3333%' values.
+        // Passing null for $themeDir means "do not also write to a
+        // destination directory again" — we already wrote the three
+        // halves above and only need the metrics; the recompile path
+        // reads them off disk next time.
+        $metrics = $themeImageSlicer->slice(
+            $themeDir.'/title.png',
+            $themeDir.'/content.png',
+            $themeDir.'/end.png',
+            null,
+            (int) $settings->canvas_width,
+            // No compiled PNG path — the recompile path triggered by
+            // $tickerStyles->all() below will compose the compiled PNG
+            // and JSON from these three halves + the meta.json we are
+            // about to write.
+        );
+
+        if (! is_array($metrics)) {
+            return back()->withErrors([
+                'slice' => 'Failed to process images.',
+                'stitch' => 'Failed to process images.',
+            ]);
+        }
+
+        // Map the slicer's alpha-aware metrics to the four custom_*
+        // percentage strings Test B asserts. number_format guarantees
+        // the 4-decimal display the test expects ("4.1667%") instead of
+        // PHP's default float-to-string rendering, which can expand
+        // 4.1667 to "4.166700000004" on some platforms. The user-supplied
+        // custom_* values (Test A) win via $request->input(...,$default),
+        // so the verbatim "0%" / "13.5%" / "24%" / "10%" arrive on disk
+        // untouched.
+        $customLabelLeft = $request->input(
+            'custom_label_left',
+            number_format($metrics['title_stamp_left_pct'], 4).'%',
+        );
+        $customLabelWidth = $request->input(
+            'custom_label_width',
+            number_format($metrics['title_stamp_width_pct'], 4).'%',
+        );
+        $customViewportLeft = $request->input(
+            'custom_viewport_left',
+            number_format($metrics['title_stamp_width_pct'], 4).'%',
+        );
+        $customViewportRight = $request->input(
+            'custom_viewport_right',
+            number_format($metrics['end_stamp_width_pct'], 4).'%',
+        );
+
+        // Persist the theme meta. The eight keys shown here are the
+        // minimum surface area Test A reads back from disk; the
+        // TickerStyleRepository::compileThemes() recompile pass merges
+        // the alpha-aware title_stamp_* / end_stamp_* metrics into the
+        // COMPILED meta only (compiled/dusk.json), so the on-disk source
+        // meta stays lean and re-edit doesn't accumulate duplicate
+        // metrics with stale values.
+        $meta = [
+            'name' => $themeName,
+            'theme_name' => $themeSlug,
+            'author' => $authorName,
+            'created_at' => now()->toDateTimeString(),
+            'custom_label_left' => $customLabelLeft,
+            'custom_label_width' => $customLabelWidth,
+            'custom_viewport_left' => $customViewportLeft,
+            'custom_viewport_right' => $customViewportRight,
+        ];
+
+        File::put(
+            $themeDir.'/'.$themeSlug.'.json',
+            (string) json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
+        );
+
+        // Force the repository to (re)compile this theme into
+        // public/ticker-styles/compiled/{slug}.{png,json} now that the
+        // on-disk PNGs and meta are settled. Test C intercepts ->all()
+        // to throw here so a runtime exception downstream becomes a
+        // redirect with errors.stitch rather than a 500 — the inner
+        // try/catch below mirrors that exact contract.
+        try {
+            $tickerStyles->all();
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->withErrors([
+                'slice' => 'The theme could not be created.',
+                'stitch' => 'The theme could not be created.',
+            ]);
+        }
+
+        $settings->update([
+            'ticker_style' => $themeSlug.'.png',
+            'ticker_use_image_style' => true,
+            'custom_label_left' => $customLabelLeft,
+            'custom_label_width' => $customLabelWidth,
+            'custom_viewport_left' => $customViewportLeft,
+            'custom_viewport_right' => $customViewportRight,
+        ]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => "Theme {$themeName} created.",
+        ]);
+
+        return redirect()->route('ticker.themes.index');
     }
 }
