@@ -714,23 +714,23 @@ test('themes can be shared and imported from a url', function () {
 
     $this->actingAs($user)
         ->post(route('ticker.themes.share.url', ['theme' => 'aurora']))
-        ->assertRedirect(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => '/ticker-theme-shares/aurora.zip']));
+        ->assertRedirect(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => url('/ticker-theme-shares/aurora.zip')]));
 
     $this->actingAs($user)
         ->postJson(route('ticker.themes.share.url', ['theme' => 'aurora']))
         ->assertOk()
         ->assertJson([
-            'share_url' => '/ticker-theme-shares/aurora.zip',
+            'share_url' => url('/ticker-theme-shares/aurora.zip'),
         ]);
 
     expect(File::exists(public_path('ticker-theme-shares/aurora.zip')))->toBeTrue();
 
     $this->actingAs($user)
-        ->get(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => '/ticker-theme-shares/aurora.zip']))
+        ->get(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => url('/ticker-theme-shares/aurora.zip')]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('ticker/theme-share')
-            ->where('shareUrl', '/ticker-theme-shares/aurora.zip'));
+            ->where('shareUrl', url('/ticker-theme-shares/aurora.zip')));
 
     Http::fake([
         'https://example.test/themes/aurora.zip' => Http::response(

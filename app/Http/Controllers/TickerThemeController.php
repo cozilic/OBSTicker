@@ -109,18 +109,19 @@ class TickerThemeController extends Controller
         File::ensureDirectoryExists(public_path('ticker-theme-shares'));
         File::copy($share['path'], $slugArchive);
 
-        $sharePath = '/ticker-theme-shares/'.$slug.'.zip';
+        // Fully qualified URL so visitors can paste the share link
+        // anywhere; url() prefixes the current request's scheme + host.
+        $shareUrl = url('/ticker-theme-shares/'.$slug.'.zip');
 
         if (request()->expectsJson()) {
             return response()->json([
-                'share_url' => $sharePath,
-                'share_path' => $sharePath,
+                'share_url' => $shareUrl,
             ]);
         }
 
         return redirect()->route('ticker.themes.share', [
             'theme' => $slug,
-            'share_url' => $sharePath,
+            'share_url' => $shareUrl,
         ]);
     }
 
