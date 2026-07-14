@@ -308,9 +308,14 @@ class TickerStyleRepository
         }
 
         $urlPath = parse_url($url, PHP_URL_PATH);
-        if (! is_string($urlPath) || preg_match(
-            '#^/themeshare/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$#',
-            $urlPath,
+        if (! is_string($urlPath) || $urlPath !== '/share-theme') {
+            throw new \RuntimeException('Only public share URLs from this host are allowed.');
+        }
+
+        $urlQuery = parse_url($url, PHP_URL_QUERY);
+        if (! is_string($urlQuery) || preg_match(
+            '/(?:^|&)uuid=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:&|$)/',
+            $urlQuery,
             $matches,
         ) !== 1) {
             throw new \RuntimeException('Only public share URLs from this host are allowed.');

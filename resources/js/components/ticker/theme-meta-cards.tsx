@@ -1,5 +1,6 @@
 import {
     Calendar,
+    ChevronDown,
     ChevronRight,
     Crop,
     Download,
@@ -21,6 +22,12 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/lib/i18n';
 import type { MessageKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -734,25 +741,52 @@ export function ThemeDetails({
                             {t('themePreviewOpenRaw')}
                         </a>
                     </Button>
-                    <Button
-                        asChild
-                        size="sm"
-                        variant="ghost"
-                        className={cn(
-                            'gap-2',
-                            isDark
-                                ? 'text-white/85 hover:bg-white/10 hover:text-white'
-                                : '',
-                        )}
-                    >
-                        <a
-                            href={partsBasePath + '/title.png'}
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            {t('themePreviewOpenSource')}
-                        </a>
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                className={cn(
+                                    'gap-2',
+                                    isDark
+                                        ? 'text-white/85 hover:bg-white/10 hover:text-white'
+                                        : '',
+                                )}
+                            >
+                                {t('themePreviewOpenSource')}
+                                <ChevronDown className="size-3 opacity-60" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                                <a
+                                    href={`${partsBasePath}/title.png`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    title.png
+                                </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <a
+                                    href={`${partsBasePath}/content.png`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    content.png
+                                </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <a
+                                    href={`${partsBasePath}/end.png`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    end.png
+                                </a>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </CardContent>
         </Card>
@@ -765,27 +799,19 @@ function PartTile({
     tone,
     src,
     fallbackSrc,
-    variant,
 }: {
     label: string;
     filename: string;
     tone: string;
     src: string;
     fallbackSrc: string;
-    variant: ThemeCardVariant;
 }) {
-    const { t } = useTranslation();
     const [failed, setFailed] = useState(false);
-
-    const fallbackBadgeClass =
-        variant === 'dark'
-            ? 'rounded-full border border-white/15 bg-black/45 px-2 py-0.5 text-[10px] tracking-widest text-white/85 uppercase backdrop-blur'
-            : 'rounded-full border bg-background/80 px-2 py-0.5 text-[10px] tracking-widest uppercase backdrop-blur';
 
     return (
         <div
             className={cn(
-                'group relative aspect-video overflow-hidden rounded-xl border bg-gradient-to-br',
+                'group relative aspect-[4/1] overflow-hidden rounded-lg border bg-checker bg-gradient-to-br',
                 tone,
             )}
         >
@@ -793,9 +819,9 @@ function PartTile({
                 src={failed ? fallbackSrc : src}
                 alt={`${label} — ${filename}`}
                 onError={() => setFailed(true)}
-                className="absolute inset-0 size-full object-cover transition duration-700 group-hover:scale-110"
+                className="absolute inset-0 size-full object-contain"
             />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-2 p-3">
                 <div>
                     <div className="text-[11px] tracking-widest text-neutral-300 uppercase">
@@ -805,9 +831,6 @@ function PartTile({
                         {filename}
                     </div>
                 </div>
-                <span className={fallbackBadgeClass}>
-                    {t('themePreviewHoverZoom')}
-                </span>
             </div>
         </div>
     );
@@ -889,7 +912,6 @@ export function PartsDecomposition({
                             tone={part.tone}
                             src={`${partsBasePath}/${part.filename}`}
                             fallbackSrc={compiledUrl}
-                            variant={variant}
                         />
                     ))}
                 </div>

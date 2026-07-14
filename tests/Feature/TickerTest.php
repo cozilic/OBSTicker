@@ -24,6 +24,7 @@ afterEach(function (): void {
     File::deleteDirectory(public_path('ticker-styles/compiled'));
     File::deleteDirectory(public_path('ticker-theme-shares'));
     Storage::disk('local')->deleteDirectory('theme-submissions');
+    Storage::disk('local')->deleteDirectory('theme-shares');
     File::delete(public_path('ticker-styles/dusk.png'));
     File::delete(public_path('ticker-styles/dusk.json'));
     File::delete(public_path('ticker-styles/Dusk.png'));
@@ -712,25 +713,59 @@ test('themes can be shared and imported from a url', function () {
         ->get(route('ticker.themes.share.download', ['theme' => 'aurora']))
         ->assertDownload('aurora.zip');
 
-    $this->actingAs($user)
-        ->post(route('ticker.themes.share.url', ['theme' => 'aurora']))
-        ->assertRedirect(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => url('/ticker-theme-shares/aurora.zip')]));
-
-    $this->actingAs($user)
+    $response = $this->actingAs($user)
         ->postJson(route('ticker.themes.share.url', ['theme' => 'aurora']))
         ->assertOk()
-        ->assertJson([
-            'share_url' => url('/ticker-theme-shares/aurora.zip'),
-        ]);
+        ->assertJsonStructure(['share_url']);
 
-    expect(File::exists(public_path('ticker-theme-shares/aurora.zip')))->toBeTrue();
+    $shareUrl = $response->json('share_url');
+    expect($shareUrl)->toBeString()
+        ->and($shareUrl)->toContain('/share-theme?uuid=')
+        ->and($shareUrl)->toStartWith(config('app.url'));
+
+    preg_match('/uuid=([0-9a-f-]{36})/', $shareUrl, $uuidMatches);
+    $capturedUuid = $uuidMatches[1] ?? '';
+    expect($capturedUuid)->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/');
+
+    expect(Storage::disk('local')->exists('theme-shares/'.$capturedUuid.'.zip'))->toBeTrue()
+        ->and(File::exists(public_path('ticker-theme-shares/aurora.zip')))->toBeFalse();
+
+    // HTML form POST (no JSON) — the path the admin "Generate" button
+    // actually triggers. Should 302-redirect into the share dialog
+    // with the dynamic share_url carried through as a query param.
+    // Each call mints a fresh UUID, so the redirect's share_url
+    // (UUID_2) will NOT equal the JSON response's share_url (UUID_1).
+    // We assert the redirect target's share_url is itself a valid
+    // /share-theme?uuid=... form, and then verify that UUID streams
+    // a downloadable zip on the public route.
+    $redirectResponse = $this->actingAs($user)
+        ->post(route('ticker.themes.share.url', ['theme' => 'aurora']));
+    $redirectResponse->assertRedirect();
+    $location = $redirectResponse->headers->get('Location');
+    expect($location)->toBeString();
+
+    preg_match('/[?&]share_url=([^&]+)/', $location, $redirectMatches);
+    $redirectedShareUrl = $redirectMatches[1] !== null
+        ? urldecode($redirectMatches[1])
+        : '';
+    expect($redirectedShareUrl)->toContain('/share-theme?uuid=')
+        ->and($redirectedShareUrl)->toStartWith(config('app.url'));
+
+    preg_match('/uuid=([0-9a-f-]{36})/', $redirectedShareUrl, $redirectUuidMatches);
+    $redirectedUuid = $redirectUuidMatches[1] ?? '';
+    expect($redirectedUuid)->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/')
+        ->and($redirectedUuid)->not->toBe($capturedUuid);
 
     $this->actingAs($user)
-        ->get(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => url('/ticker-theme-shares/aurora.zip')]))
+        ->get(route('ticker.themes.share.public').'?uuid='.$redirectedUuid)
+        ->assertDownload('theme.zip');
+
+    $this->actingAs($user)
+        ->get(route('ticker.themes.share', ['theme' => 'aurora', 'share_url' => $shareUrl]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('ticker/theme-share')
-            ->where('shareUrl', url('/ticker-theme-shares/aurora.zip')));
+            ->where('shareUrl', $shareUrl));
 
     Http::fake([
         'https://example.test/themes/aurora.zip' => Http::response(

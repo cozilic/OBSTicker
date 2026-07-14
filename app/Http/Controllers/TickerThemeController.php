@@ -95,23 +95,17 @@ class TickerThemeController extends Controller
             abort(404);
         }
 
-        // Persist the share archive on disk under both paths so the
-        // GHA share-URL assertions stay green:
-        //   1. storage/app/private/theme-shares/{uuid}.zip — the
-        //      UUID-named copy the existing catalog-wide import flow
-        //      ($tickerStyles->importThemeUrl) reads through the
-        //      {@see resolveLocalSharePath} shortcut.
-        //   2. public/ticker-theme-shares/{slug}.zip — the slug-named
-        //      static path the test asserts at file-existence time and
-        //      that humans see as the "share URL" from the admin button.
+        // Persist the share archive on disk under a UUID-named path
+        // so the catalog-wide import flow
+        // ($tickerStyles->importThemeUrl) can read it back through
+        // the {@see TickerStyleRepository::resolveLocalSharePath}
+        // shortcut without going over HTTP.
         $share = $tickerStyles->createShareZip($slug);
-        $slugArchive = public_path('ticker-theme-shares/'.$slug.'.zip');
-        File::ensureDirectoryExists(public_path('ticker-theme-shares'));
-        File::copy($share['path'], $slugArchive);
 
         // Fully qualified URL so visitors can paste the share link
-        // anywhere; url() prefixes the current request's scheme + host.
-        $shareUrl = url('/ticker-theme-shares/'.$slug.'.zip');
+        // anywhere. The UUID is opaque on purpose so a shared link
+        // doesn't leak the source theme's slug.
+        $shareUrl = url('/share-theme?uuid='.$share['id']);
 
         if (request()->expectsJson()) {
             return response()->json([
@@ -125,8 +119,10 @@ class TickerThemeController extends Controller
         ]);
     }
 
-    public function publicShare(string $uuid): BinaryFileResponse
+    public function publicShare(Request $request): BinaryFileResponse
     {
+        $uuid = $request->string('uuid')->toString();
+
         if (! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $uuid)) {
             abort(404);
         }
@@ -248,8 +244,12 @@ class TickerThemeController extends Controller
             $storedPath = 'theme-submissions/'.$fetched['slug'].'-'.Str::uuid()->toString().'.zip';
             Storage::disk('local')->put($storedPath, File::get($tempArchive));
         } catch (\RuntimeException $exception) {
-            /** @phpstan-ignore-next-line */
-            if ($storedPath !== null) {
+            // $storedPath may stay `null` if fetchThemeArchiveFromUrl()
+            // throws before the assignment; gate the cleanup on a
+            // string check so the nullable narrowing is explicit at
+            // runtime.
+            // @phpstan-ignore-next-line — phpstan narrows to non-falsy-string once the try block assigns it; the runtime nullable path is invisible to static analysis.
+            if (is_string($storedPath)) {
                 Storage::disk('local')->delete($storedPath);
             }
 

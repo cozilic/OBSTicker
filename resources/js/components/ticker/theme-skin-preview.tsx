@@ -352,10 +352,6 @@ export default function ThemeSkinPreview({
         height: '6%',
     };
 
-    const shellContainerStyle: CSSProperties = {
-        bottom: 0,
-    };
-
     const labelStyle: CSSProperties =
         labelBox !== null
             ? {
@@ -425,26 +421,6 @@ export default function ThemeSkinPreview({
                 role="img"
                 aria-label={`Live preview of ${currentItem.headline}`}
             >
-                {/*
-                  The compiled theme is rendered as a backdrop; we then
-                  overlay the live ticker's label and viewport just like
-                  ticker/show.tsx does — so the audience can see exactly
-                  what the broadcaster will read.
-                */}
-                <div
-                    className={cn(
-                        'pointer-events-none absolute inset-0 z-0 bg-no-repeat',
-                    )}
-                    style={{
-                        ...shellContainerStyle,
-                        backgroundImage: `url("${imageUrl}")`,
-                        backgroundSize: `${100 / 0.06}% auto`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'center 0%',
-                    }}
-                    aria-hidden="true"
-                />
-
                 {/*
                   Lower-third ticker shell, the same shape the live
                   ticker uses (height = 6% of canvas, full-width strip

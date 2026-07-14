@@ -38,7 +38,13 @@ Route::get('ticker-admin/themes/{theme}/share', [TickerThemeController::class, '
 Route::get('ticker-admin/themes/{theme}/share/download', [TickerThemeController::class, 'download'])->name('ticker.themes.share.download');
 Route::post('ticker-admin/themes/{theme}/share/url', [TickerThemeController::class, 'generateShareUrl'])->name('ticker.themes.share.url');
 
-Route::get('themeshare/{uuid}', [TickerThemeController::class, 'publicShare'])
+// Public share resolver: a visitor pastes
+// https://host/share-theme?uuid=<uuid> and the controller streams
+// the .zip straight out of storage/app/private/theme-shares/. The
+// UUID path makes the share URL opaque (no theme slug leaks through
+// the link) so the recipient doesn't learn which themes exist on
+// the source install before they click.
+Route::get('share-theme', [TickerThemeController::class, 'publicShare'])
     ->middleware('throttle:60,1')
     ->name('ticker.themes.share.public');
 
