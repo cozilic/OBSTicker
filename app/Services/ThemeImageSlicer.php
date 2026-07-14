@@ -220,9 +220,9 @@ class ThemeImageSlicer
                 $height = max(32, min(
                     self::MAX_STYLE_HEIGHT,
                     (int) round(max(
-                        imagesy($leftImg) * $scaleFactor,
-                        imagesy($middleImg) * $scaleFactor,
-                        imagesy($rightImg) * $scaleFactor,
+                        imagesy($leftImg),
+                        imagesy($middleImg),
+                        imagesy($rightImg),
                     )),
                 ));
             }
