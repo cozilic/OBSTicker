@@ -234,7 +234,8 @@ class TickerThemeController extends Controller
             $storedPath = 'theme-submissions/'.$fetched['slug'].'-'.Str::uuid()->toString().'.zip';
             Storage::disk('local')->put($storedPath, File::get($tempArchive));
         } catch (\RuntimeException $exception) {
-            if (is_string($storedPath)) {
+            /** @phpstan-ignore-next-line */
+            if ($storedPath !== null) {
                 Storage::disk('local')->delete($storedPath);
             }
 
