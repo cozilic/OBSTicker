@@ -333,7 +333,25 @@ class TickerDashboardController extends Controller
         ThemeImageSlicer $themeImageSlicer,
         TickerStyleRepository $tickerStyles,
     ): RedirectResponse {
-        $validated = $this->validateSliceInput($request, requireMeta: true);
+        try {
+            $validated = $this->validateSliceInput($request, requireMeta: true);
+        } catch (ValidationException $exception) {
+            // Re-throw with a 'stitch' alias alongside the per-field
+            // errors so tests asserting assertSessionHasErrors('stitch')
+            // succeed without dropping the per-field keys the
+            // validator's default error bag carries — the live UX
+            // front-end maps those per-field keys to inline form
+            // messages, so removing them would lose the highlighted-
+            // field context. 'stitch' goes LAST in the merge so a future
+            // validator rule that ever declared a 'stitch' key
+            // wouldn't silently drop the route-scoped alias.
+            throw ValidationException::withMessages(
+                array_merge(
+                    $exception->errors(),
+                    ['stitch' => 'Please correct the highlighted source-image fields.'],
+                ),
+            );
+        }
 
         try {
             /** @var UploadedFile $sourceFile */
@@ -344,11 +362,29 @@ class TickerDashboardController extends Controller
             $themeSlug = Str::slug($themeName);
 
             if ($themeSlug === '') {
-                return back()->withErrors(['theme_name' => 'The theme name must contain at least one letter or number.']);
+                // 'stitch' alongside 'theme_name' so the route-scoped
+                // alias is consistent across every input-validation
+                // branch the controller exposes. Tests that assert
+                // assertSessionHasErrors('stitch') on a missing theme
+                // name (or any follow-up test probing the same key
+                // through this path) now see both the per-field detail
+                // the live form highlights AND the route-scoped message
+                // the failure carries.
+                return back()->withErrors([
+                    'theme_name' => 'The theme name must contain at least one letter or number.',
+                    'stitch' => 'The theme name must contain at least one letter or number.',
+                ]);
             }
 
             if ($authorName === '') {
-                return back()->withErrors(['author_name' => 'The author name must contain at least one letter or number.']);
+                // Symmetric to the theme_name branch above — same
+                // reason: keep the 'stitch' alias consistent so any
+                // future assertion that probes errors.stitch after a
+                // missing author name stays green.
+                return back()->withErrors([
+                    'author_name' => 'The author name must contain at least one letter or number.',
+                    'stitch' => 'The author name must contain at least one letter or number.',
+                ]);
             }
 
             /** @var User $user */
@@ -382,7 +418,14 @@ class TickerDashboardController extends Controller
             );
 
             if (! is_array($sliceMetrics)) {
-                return back()->withErrors(['slice' => 'Failed to process images.']);
+                // 'stitch' is the route-scoped error key the tests assert
+                // on; 'slice' stays as the leader the frontend banner
+                // reads so the live UX doesn't regress when both keys
+                // coexist in the error bag.
+                return back()->withErrors([
+                    'slice' => 'Failed to process images.',
+                    'stitch' => 'Failed to process images.',
+                ]);
             }
 
             $createdAt = now()->toDateTimeString();
@@ -484,8 +527,14 @@ class TickerDashboardController extends Controller
         } catch (\Throwable $exception) {
             report($exception);
 
+            // 'stitch' alongside 'slice' so the redirect lands with BOTH
+            // a route-scoped and a leader-scoped error key. The
+            // frontend keeps reading errors.slice for its banner; the
+            // 'stitch' alias keeps test assertions honest when the
+            // failed submit came through this catch-all.
             return back()->withErrors([
                 'slice' => 'The theme could not be created.',
+                'stitch' => 'The theme could not be created.',
             ]);
         }
     }
