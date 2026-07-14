@@ -10,7 +10,10 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -55,9 +58,14 @@ class TickerThemeController extends Controller
             abort(404);
         }
 
+        $shareUrl = request()->string('share_url')->toString();
+        if ($shareUrl === '') {
+            $shareUrl = null;
+        }
+
         return Inertia::render('ticker/theme-share', [
             'theme' => $tickerStyles->findDetailed($slug),
-            'shareUrl' => request()->string('share_url')->toString() ?: $tickerStyles->shareZipUrl($slug),
+            'shareUrl' => $shareUrl,
             'generateShareUrlAction' => route('ticker.themes.share.url', ['theme' => $slug]),
         ]);
     }
@@ -87,13 +95,13 @@ class TickerThemeController extends Controller
             abort(404);
         }
 
-        $sharePath = $tickerStyles->createShareZip($slug);
-        $shareUrl = $tickerStyles->shareZipUrl($slug);
+        $share = $tickerStyles->createShareZip($slug);
+        $shareUrl = route('ticker.themes.share.public', ['uuid' => $share['id']], true);
 
         if (request()->expectsJson()) {
             return response()->json([
                 'share_url' => $shareUrl,
-                'share_path' => $sharePath,
+                'share_path' => $share['path'],
             ]);
         }
 
@@ -101,6 +109,21 @@ class TickerThemeController extends Controller
             'theme' => $slug,
             'share_url' => $shareUrl,
         ]);
+    }
+
+    public function publicShare(string $uuid): BinaryFileResponse
+    {
+        if (! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $uuid)) {
+            abort(404);
+        }
+
+        $sharePath = storage_path('app/private/theme-shares/'.$uuid.'.zip');
+
+        if (! is_file($sharePath)) {
+            abort(404);
+        }
+
+        return response()->download($sharePath, 'theme.zip', ['Content-Type' => 'application/zip']);
     }
 
     public function show(string $theme, TickerStyleRepository $tickerStyles): Response|RedirectResponse
@@ -116,13 +139,28 @@ class TickerThemeController extends Controller
             abort(404);
         }
 
-        return Inertia::render(request()->routeIs('themes.*') ? 'themes/theme-preview' : 'ticker/theme-preview', [
-            'theme' => $themeData,
-            'themesUrl' => request()->routeIs('themes.*')
-                ? route('themes.index')
-                : route('ticker.themes.index'),
-            'createThemeUrl' => route('ticker.theme'),
-        ]);
+        $isAdminPreview = ! request()->routeIs('themes.*');
+
+        if ($isAdminPreview) {
+            $officialState = $this->fetchOfficialSubmissionStates([$themeData['slug']])[$themeData['slug']] ?? null;
+            $localSubmission = ThemeSubmission::query()
+                ->where('theme_slug', $themeData['slug'])
+                ->first();
+
+            $themeData['submissionStatus'] = $officialState['status'] ?? $localSubmission?->status;
+            $themeData['submissionRejectionReason'] = $officialState['rejection_reason'] ?? $localSubmission?->rejection_reason;
+        }
+
+        return Inertia::render(
+            request()->routeIs('themes.*') ? 'themes/theme-preview' : 'ticker/theme-preview',
+            [
+                'theme' => $themeData,
+                'themesUrl' => request()->routeIs('themes.*')
+                    ? route('themes.index')
+                    : route('ticker.themes.index'),
+                'createThemeUrl' => route('ticker.theme'),
+            ],
+        );
     }
 
     public function store(Request $request, TickerStyleRepository $tickerStyles): RedirectResponse
@@ -133,6 +171,14 @@ class TickerThemeController extends Controller
             'theme_zip' => ['nullable', 'file', 'mimes:zip', 'max:10240', 'required_without:theme_url'],
             'theme_url' => ['nullable', 'url', 'max:2048', 'required_without:theme_zip'],
         ]);
+
+        // URL imports on the official catalog flow through the moderation queue
+        // so nothing reaches the public catalog without admin approval. Self-
+        // hosted installs keep the direct-import path because they have no
+        // moderation queue (see ThemeSubmissionController::isOfficialCatalogHost).
+        if (! empty($validated['theme_url']) && $this->isOfficialCatalogHost()) {
+            return $this->queueSubmissionFromUrl($tickerStyles, $validated['theme_url']);
+        }
 
         try {
             if (! empty($validated['theme_url'])) {
@@ -151,6 +197,92 @@ class TickerThemeController extends Controller
         return redirect()->route('ticker.themes.show', ['theme' => $theme['slug']]);
     }
 
+    /**
+     * Persist a URL-imported theme as a pending ThemeSubmission row instead of
+     * publishing it locally. Mirrors the slug + duplicate-pending guards from
+     * {@see ThemeSubmissionController::store} so the eventual approval path
+     * stays safe.
+     */
+    private function queueSubmissionFromUrl(TickerStyleRepository $tickerStyles, string $url): RedirectResponse
+    {
+        $tempArchive = null;
+        $storedPath = null;
+
+        // Default-seeded so any unexpected throw that bypasses the catch can
+        // never insert a row with `null` theme_name / theme_slug.
+        $fetched = [
+            'archivePath' => null,
+            'slug' => '',
+            'label' => null,
+            'author' => null,
+        ];
+
+        try {
+            $fetched = $tickerStyles->fetchThemeArchiveFromUrl($url);
+            $tempArchive = $fetched['archivePath'];
+
+            if (ThemeSubmission::query()
+                ->where('theme_slug', $fetched['slug'])
+                ->where('status', 'pending')
+                ->exists()) {
+                return back()->withErrors([
+                    'theme_url' => 'A submission with that theme name is already pending.',
+                ]);
+            }
+
+            Storage::disk('local')->makeDirectory('theme-submissions');
+            $storedPath = 'theme-submissions/'.$fetched['slug'].'-'.Str::uuid()->toString().'.zip';
+            Storage::disk('local')->put($storedPath, File::get($tempArchive));
+        } catch (\RuntimeException $exception) {
+            if (is_string($storedPath)) {
+                Storage::disk('local')->delete($storedPath);
+            }
+
+            return back()->withErrors([
+                'theme_url' => $exception->getMessage(),
+            ]);
+        } finally {
+            if (is_string($tempArchive) && is_file($tempArchive)) {
+                File::delete($tempArchive);
+            }
+        }
+
+        $user = Auth::user();
+
+        ThemeSubmission::query()->create([
+            'theme_name' => $fetched['label'],
+            'theme_slug' => $fetched['slug'],
+            'author_name' => $fetched['author'] ?? $this->resolveSubmitterName($user),
+            'submitter_name' => $this->resolveSubmitterName($user),
+            'submitter_email' => $this->resolveSubmitterEmail($user),
+            'source_type' => 'url',
+            'source_url' => $url,
+            'archive_path' => $storedPath,
+            'status' => 'pending',
+        ]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Theme submitted for moderation.',
+        ]);
+
+        return redirect()->route('ticker.theme-submissions.index');
+    }
+
+    private function resolveSubmitterName(mixed $user): string
+    {
+        $name = data_get($user, 'name');
+
+        return is_string($name) && trim($name) !== '' ? trim($name) : 'Owner';
+    }
+
+    private function resolveSubmitterEmail(mixed $user): string
+    {
+        $email = data_get($user, 'email');
+
+        return is_string($email) && trim($email) !== '' ? trim($email) : 'owner@example.test';
+    }
+
     public function destroy(string $theme, TickerStyleRepository $tickerStyles): RedirectResponse
     {
         $this->assertThemeCatalogEnabled();
@@ -167,10 +299,6 @@ class TickerThemeController extends Controller
             ->update([
                 'ticker_style' => null,
                 'ticker_use_image_style' => false,
-                'custom_label_left' => null,
-                'custom_label_width' => null,
-                'custom_viewport_left' => null,
-                'custom_viewport_right' => null,
             ]);
 
         $tickerStyles->deleteTheme($slug);

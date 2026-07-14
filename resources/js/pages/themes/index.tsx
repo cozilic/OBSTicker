@@ -1,6 +1,6 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Download, FolderOpen, Link2, LogIn } from 'lucide-react';
-import { useState } from 'react';
+import { Download, FolderOpen, Link2, LogIn, Plus } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
@@ -12,11 +12,21 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { useThemeZipSizeGuard } from '@/lib/hooks/use-theme-zip-size-guard';
 import { useTranslation } from '@/lib/i18n';
-import tickerThemesRoutes from '@/routes/ticker/themes';
 import { dashboard, login } from '@/routes';
+import tickerThemesRoutes from '@/routes/ticker/themes';
 
 type Theme = {
     slug: string;
@@ -55,18 +65,58 @@ export default function PublicThemes({ themes }: Props) {
         errors: Record<string, string>;
     }>().props;
     const [themeImportUrl, setThemeImportUrl] = useState('');
+    const [themeZip, setThemeZip] = useState<File | null>(null);
+    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     const canImportThemes = auth.user !== null;
 
-    const handleUrlImport = (event: FormEvent<HTMLFormElement>) => {
+    const { error: themeZipError, sizeLabel: themeZipSizeLabel } =
+        useThemeZipSizeGuard(themeZip);
+
+    const resetForm = () => {
+        setThemeImportUrl('');
+        setThemeZip(null);
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const handleImport = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
-        const value = themeImportUrl.trim();
-        if (!value) {
+        if (isSubmitting) {
             return;
         }
 
-        router.post(tickerThemesRoutes.store.url(), { theme_url: value }, {
-            onSuccess: () => router.flushAll(),
+        const value = themeImportUrl.trim();
+
+        if (!value && !themeZip) {
+            return;
+        }
+
+        setIsSubmitting(true);
+
+        const formData = new FormData();
+
+        if (value) {
+            formData.set('theme_url', value);
+        }
+
+        if (themeZip) {
+            formData.set('theme_zip', themeZip);
+        }
+
+        router.post(tickerThemesRoutes.store.url(), formData, {
+            forceFormData: true,
+            onSuccess: () => {
+                setIsImportDialogOpen(false);
+                resetForm();
+                router.flushAll();
+            },
+            onFinish: () => setIsSubmitting(false),
         });
     };
 
@@ -109,51 +159,143 @@ export default function PublicThemes({ themes }: Props) {
                             or import a theme into your own admin panel.
                         </p>
                     </div>
+                    {canImportThemes ? (
+                        <div className="mt-6">
+                            <Button
+                                type="button"
+                                size="lg"
+                                onClick={() => setIsImportDialogOpen(true)}
+                                className="gap-2"
+                            >
+                                <Plus />
+                                {t('addATheme')}
+                            </Button>
+                        </div>
+                    ) : null}
                 </section>
 
                 {canImportThemes ? (
-                    <section className="mx-auto w-full max-w-6xl px-5 pb-8">
-                        <Card className="rounded-lg border-white/10 bg-white/[0.04]">
-                            <CardHeader>
-                                <CardTitle>{t('importTheme')}</CardTitle>
-                                <CardDescription>
-                                    {t('themeImportDescription')}
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <form onSubmit={handleUrlImport} className="flex flex-col gap-3 md:flex-row md:items-end">
-                                    <div className="flex-1">
-                                        <Label htmlFor="theme_url">
-                                            {t('themeImportUrl')}
-                                        </Label>
-                                        <Input
-                                            id="theme_url"
-                                            name="theme_url"
-                                            type="url"
-                                            value={themeImportUrl}
-                                            onChange={(event) =>
-                                                setThemeImportUrl(event.target.value)
-                                            }
-                                            placeholder="https://example.com/scoreboard.zip"
-                                            className="mt-1"
-                                        />
-                                        <InputError
-                                            className="mt-2"
-                                            message={errors.theme_url}
-                                        />
+                    <Dialog
+                        open={isImportDialogOpen}
+                        onOpenChange={(open) => {
+                            if (isSubmitting && !open) {
+                                return;
+                            }
+
+                            setIsImportDialogOpen(open);
+
+                            if (!open) {
+                                resetForm();
+                            }
+                        }}
+                    >
+                        <DialogContent className="sm:max-w-lg">
+                            <form onSubmit={handleImport} className="space-y-4">
+                                <DialogHeader>
+                                    <DialogTitle>{t('addATheme')}</DialogTitle>
+                                    <DialogDescription>
+                                        {t('themeImportDescription')}
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div>
+                                    <Label htmlFor="theme_url">
+                                        {t('themeImportUrl')}
+                                    </Label>
+                                    <Input
+                                        id="theme_url"
+                                        name="theme_url"
+                                        type="url"
+                                        value={themeImportUrl}
+                                        disabled={isSubmitting}
+                                        onChange={(event) =>
+                                            setThemeImportUrl(
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="https://example.com/scoreboard.zip"
+                                        className="mt-1"
+                                    />
+                                    <InputError
+                                        className="mt-2"
+                                        message={errors.theme_url}
+                                    />
+                                </div>
+                                <div
+                                    className="relative my-2"
+                                    aria-hidden="true"
+                                >
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-white/10" />
                                     </div>
+                                    <div className="relative flex justify-center">
+                                        <span className="bg-background px-2 text-xs text-muted-foreground">
+                                            {t('orSeparator')}
+                                        </span>
+                                    </div>
+                                </div>{' '}
+                                <div>
+                                    <Label htmlFor="theme_zip">
+                                        {t('themeZip')}
+                                    </Label>{' '}
+                                    <Input
+                                        ref={fileInputRef}
+                                        id="theme_zip"
+                                        name="theme_zip"
+                                        type="file"
+                                        accept=".zip,application/zip"
+                                        disabled={isSubmitting}
+                                        onChange={(event) =>
+                                            setThemeZip(
+                                                event.target.files?.[0] ?? null,
+                                            )
+                                        }
+                                        className="mt-1"
+                                    />
+                                    {themeZip ? (
+                                        <p
+                                            className={`mt-2 text-sm ${themeZipError ? 'text-red-400' : 'text-neutral-400'}`}
+                                        >
+                                            {themeZip.name} {themeZipSizeLabel}
+                                        </p>
+                                    ) : null}
+                                    <InputError
+                                        className="mt-2"
+                                        message={
+                                            themeZipError ?? errors.theme_zip
+                                        }
+                                    />
+                                </div>
+                                <DialogFooter>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() =>
+                                            setIsImportDialogOpen(false)
+                                        }
+                                        disabled={isSubmitting}
+                                    >
+                                        {t('done')}
+                                    </Button>
                                     <Button
                                         type="submit"
-                                        variant="outline"
-                                        disabled={themeImportUrl.trim() === ''}
+                                        disabled={
+                                            isSubmitting ||
+                                            (themeImportUrl.trim() === '' &&
+                                                !themeZip) ||
+                                            themeZipError !== null
+                                        }
                                     >
-                                        <Link2 />
-                                        {t('importThemeFromUrl')}
+                                        {isSubmitting ? (
+                                            <Spinner className="size-4" />
+                                        ) : (
+                                            <Link2 />
+                                        )}
+                                        {t('importTheme')}
                                     </Button>
-                                </form>
-                            </CardContent>
-                        </Card>
-                    </section>
+                                </DialogFooter>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
                 ) : null}
 
                 <section className="mx-auto w-full max-w-6xl px-5 pb-12">
@@ -192,7 +334,9 @@ export default function PublicThemes({ themes }: Props) {
                                     </CardHeader>
                                     <CardContent className="flex flex-wrap gap-2">
                                         <Button asChild variant="outline">
-                                            <Link href={`/themes/${theme.slug}`}>
+                                            <Link
+                                                href={`/themes/${theme.slug}`}
+                                            >
                                                 {t('themePreview')}
                                             </Link>
                                         </Button>

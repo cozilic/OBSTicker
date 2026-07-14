@@ -1,4 +1,7 @@
 <?php
+ini_set('upload_max_filesize', '16M');
+ini_set('post_max_size', '16M');
+ini_set('max_execution_time', 300);
 
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;

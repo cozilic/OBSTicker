@@ -304,3 +304,23 @@
         transform: scale(0.88);
     }
 }
+
+/* CSS-only checker pattern that surfaces through transparent PNG pixels
+   in the theme preview. Built from the standard 4-linear-gradient trick —
+   the two opposing diagonals plus offset positions make alternating diamonds
+   on top of a background-color fill. Uses shadcn theme tokens so it adapts
+   automatically to light/dark mode (no separate dark variant needed). */
+.bg-checker {
+    background-color: var(--background);
+    background-image:
+        linear-gradient(45deg, var(--muted) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--muted) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--muted) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--muted) 75%);
+    background-size: 16px 16px;
+    background-position:
+        0 0,
+        0 8px,
+        8px -8px,
+        -8px 0;
+}

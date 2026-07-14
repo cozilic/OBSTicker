@@ -7,19 +7,29 @@ use App\Models\RssFeed;
 use App\Models\TickerMessage;
 use App\Models\TickerSetting;
 use App\Models\User;
-use App\Services\ThemeImageStitcher;
+use App\Services\ThemeImageSlicer;
 use App\Services\TickerStyleRepository;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class TickerDashboardController extends Controller
 {
+    /**
+     * Minimum slack between any two adjacent handles (vertical or
+     * horizontal). Mirrors the 1% gap the JS frontend enforces via
+     * {@see MIN_GAP} so the user can never push two handles past
+     * each other mid-drag.
+     */
+    private const SLIDER_GAP_PERCENT = 1.0;
+
     public function __invoke(TickerStyleRepository $tickerStyles): Response|RedirectResponse
     {
         if (! Auth::check()) {
@@ -66,10 +76,6 @@ class TickerDashboardController extends Controller
                 'require_auth_to_submit',
                 'moderator_only_submissions',
                 'show_rss',
-                'custom_label_left',
-                'custom_label_width',
-                'custom_viewport_left',
-                'custom_viewport_right',
             ]),
             'moderators' => $user->isOwner()
                 ? User::query()
@@ -106,15 +112,6 @@ class TickerDashboardController extends Controller
             'show_rss' => $request->boolean('show_rss'),
         ]);
 
-        if ($tickerStyle === null || ! str_starts_with($tickerStyle, 'stitched-')) {
-            $settings->update([
-                'custom_label_left' => null,
-                'custom_label_width' => null,
-                'custom_viewport_left' => null,
-                'custom_viewport_right' => null,
-            ]);
-        }
-
         return back();
     }
 
@@ -129,31 +126,218 @@ class TickerDashboardController extends Controller
         return Inertia::render('ticker/theme');
     }
 
-    public function stitch(Request $request, ThemeImageStitcher $themeImageStitcher): RedirectResponse
+    /**
+     * Validate the inputs shared by {@see self::slice()} (commit) and
+     * {@see self::slicePreview()} (preview). Centralized so the preview
+     * endpoint and the committing endpoint always agree on the contract
+     * — e.g. the split coordinate bounds, the file mimetype list, and the
+     * max upload size all stay in lock-step.
+     *
+     * @return array<string, mixed>
+     */
+    private function validateSliceInput(Request $request, bool $requireMeta): array
     {
-        $request->validate([
-            'theme_name' => ['required', 'string', 'max:80'],
-            'author_name' => ['required', 'string', 'max:80'],
-            'title_image' => ['required_without:left_image', 'nullable', 'image', 'mimes:png,jpg,jpeg', 'max:4096'],
-            'content_image' => ['required_without:middle_image', 'nullable', 'image', 'mimes:png,jpg,jpeg', 'max:4096'],
-            'end_image' => ['required_without:right_image', 'nullable', 'image', 'mimes:png,jpg,jpeg', 'max:4096'],
-            'left_image' => ['required_without:title_image', 'nullable', 'image', 'mimes:png,jpg,jpeg', 'max:4096'],
-            'middle_image' => ['required_without:content_image', 'nullable', 'image', 'mimes:png,jpg,jpeg', 'max:4096'],
-            'right_image' => ['required_without:end_image', 'nullable', 'image', 'mimes:png,jpg,jpeg', 'max:4096'],
-            'custom_label_left' => ['nullable', 'string', 'max:32'],
-            'custom_label_width' => ['nullable', 'string', 'max:32'],
-            'custom_viewport_left' => ['nullable', 'string', 'max:32'],
-            'custom_viewport_right' => ['nullable', 'string', 'max:32'],
+        $rules = [
+            'source_image' => ['required', 'image', 'mimes:png,jpg,jpeg', 'max:4096'],
+            // Percentages with two decimals of precision; split_1 must be
+            // strictly less than split_2 with at least 1% on either side
+            // so every slot has a usable minimum width.
+            // Percentages with two decimals of precision; split_1 must be
+            // strictly less than split_2 with at least 1% on either side
+            // so every slot has a usable minimum width. Both splits cap at
+            // 99.99 (not 100) so the user can never sit exactly on a slot
+            // boundary where the right-side slot would collapse to zero.
+            // max:98.99 used to be the cap for split_2 — that rejected
+            // any payload where the user dragged split_2 all the way
+            // against bboxRight (defaults to 99.00).
+            'split_1' => ['required', 'numeric', 'min:0.01', 'max:99.99', 'lt:split_2'],
+            'split_2' => ['required', 'numeric', 'min:0.01', 'max:100', 'gt:split_1'],
+            // Dynamic content awareness — when true the controller
+            // skips the "split_2 must stay 1% inside right_pct" rule
+            // (the user wants the end region to collapse) and
+            // hard-clamps split_2 to right_pct before the slicer
+            // runs. The theme builder sends '1' / '0'; the boolean
+            // rule accepts either.
+            'dynamic_content_stretch' => ['nullable', 'boolean'],
+            // Bounding box percentages (0–100) defining the 2D region of
+            // the source artwork the ticker-relevant strips live in.
+            // top < bottom and left < right by at least 1%; remaining
+            // bounds must keep each split inside the box so GD never
+            // receives an empty slot.
+            'top_pct' => ['nullable', 'numeric', 'min:0', 'max:99', 'lt:bottom_pct'],
+            'bottom_pct' => ['nullable', 'numeric', 'min:1', 'max:100', 'gt:top_pct'],
+            'left_pct' => ['nullable', 'numeric', 'min:0', 'max:99', 'lt:right_pct'],
+            'right_pct' => ['nullable', 'numeric', 'min:1', 'max:100', 'gt:left_pct'],
+            // Manual label-box percentages (0–100) the artist drags inside
+            // the title slot. Required on commit so the live ticker always
+            // has an authoritative rect to anchor the headline overlay —
+            // the alpha-aware fallback only kicks in for legacy themes
+            // compiled before this field set existed.
+            'label_left_pct' => ['nullable', 'numeric', 'min:0', 'max:99'],
+            'label_width_pct' => ['nullable', 'numeric', 'min:0.01', 'max:100'],
+            'label_top_pct' => ['nullable', 'numeric', 'min:0', 'max:99'],
+            'label_height_pct' => ['nullable', 'numeric', 'min:0.01', 'max:100'],
+        ];
+
+        if ($requireMeta) {
+            $rules['theme_name'] = ['required', 'string', 'max:80'];
+            $rules['author_name'] = ['required', 'string', 'max:80'];
+        }
+
+        // After the geometry rules have run, verify the splits stay
+        // inside the bounding box with at least one percent gap on each
+        // side. Symfony's `gt:`/`lt:` can't compare across form fields
+        // they don't already know about, so this manual check runs after.
+        $validated = $request->validate($rules);
+
+        $topPct = (float) ($validated['top_pct'] ?? 0.0);
+        $bottomPct = (float) ($validated['bottom_pct'] ?? 100.0);
+        $leftPct = (float) ($validated['left_pct'] ?? 0.0);
+        $rightPct = (float) ($validated['right_pct'] ?? 100.0);
+        $split1 = (float) $validated['split_1'];
+        $split2 = (float) $validated['split_2'];
+
+        $dynamicContentStretch = $request->boolean('dynamic_content_stretch');
+
+        // Always enforce split_1's slot width (≥1%) and the
+        // split_1↔split_2 gap (≥1%) — the title slot and the
+        // (possibly stretched) content slot can never collapse,
+        // regardless of the dynamic flag's value.
+        if ($split1 <= $leftPct + self::SLIDER_GAP_PERCENT
+            || $split2 <= $split1 + self::SLIDER_GAP_PERCENT) {
+            throw ValidationException::withMessages([
+                'split_1' => 'split_1 must stay at least 1% inside the bounding box and at least 1% before split_2.',
+            ]);
+        }
+
+        // The split_2-vs-right_pct gap is the only geometry check
+        // the dynamic-content flag opts INTO: when off, split_2
+        // must stay ≥1% inside right_pct so the end region remains
+        // a usable slot; when on, the user has explicitly asked for
+        // the end region to collapse, so we accept split_2 ==
+        // right_pct and coerce it via the next block.
+        if (! $dynamicContentStretch
+            && $split2 >= $rightPct - self::SLIDER_GAP_PERCENT) {
+            throw ValidationException::withMessages([
+                'split_2' => 'split_2 must stay at least 1% inside the bounding box unless dynamic content awareness is on.',
+            ]);
+        }
+
+        if ($dynamicContentStretch) {
+            // Hard-clamp split_2 to right_pct so the slicer and the
+            // JS renderer never see a value that depends on a race
+            // with bboxRight. The artist's intent ("content reaches
+            // the edge") is preserved regardless of how close they
+            // dragged the slider before flipping the toggle.
+            $validated['split_2'] = $rightPct;
+            $split2 = $rightPct;
+        }
+
+        // Manual label-box config: any subset provided must fit inside
+        // the title slot horizontally ([bboxLeft .. split_1]) and the
+        // bbox vertically ([bboxTop .. bboxBottom]). Defaults fill any
+        // missing dimension so the controller can lean on the rule
+        // instead of re-implementing the geometry inline. The right /
+        // bottom edges are allowed to touch the slot boundary exactly
+        // because the frontend's right/top handles have a hard min
+        // (LABEL_MIN_GAP) but no right/bottom padding — the artist
+        // expects "fills the slot" to be a normal, accepted pose.
+        $labelLeft = (float) ($validated['label_left_pct'] ?? $leftPct);
+        $labelWidth = (float) ($validated['label_width_pct'] ?? max(0.01, $split1 - $leftPct));
+        $labelTop = (float) ($validated['label_top_pct'] ?? $topPct);
+        $labelHeight = (float) ($validated['label_height_pct'] ?? max(0.01, $bottomPct - $topPct));
+
+        if ($labelLeft < $leftPct
+            || $labelLeft + $labelWidth > $split1
+            || $labelWidth < self::SLIDER_GAP_PERCENT / 2) {
+            throw ValidationException::withMessages([
+                'label_left_pct' => 'The label box must stay inside the title slot horizontally (with at least 0.5% width).',
+            ]);
+        }
+
+        if ($labelTop < $topPct
+            || $labelTop + $labelHeight > $bottomPct
+            || $labelHeight < self::SLIDER_GAP_PERCENT / 2) {
+            throw ValidationException::withMessages([
+                'label_top_pct' => 'The label box must stay inside the bounding box vertically (with at least 0.5% height).',
+            ]);
+        }
+
+        if ($requireMeta) {
+            // Commit path always persists a fully-resolved label rect so
+            // the live ticker can read four concrete numbers without
+            // falling back to alpha-aware heuristics. Fall back to the
+            // bbox-respecting defaults computed above when the form
+            // submitted a partial set.
+            $validated['label_left_pct'] = $labelLeft;
+            $validated['label_width_pct'] = $labelWidth;
+            $validated['label_top_pct'] = $labelTop;
+            $validated['label_height_pct'] = $labelHeight;
+        }
+
+        return $validated;
+    }
+
+    /**
+     * Render a preview of the compiled theme from a single source image +
+     * two split coordinates, without writing anything to the public theme
+     * directory or updating settings. The frontend calls this on dragend
+     * so the user can see the compiled ticker background before committing.
+     *
+     * Response shape: a JSON envelope with the same geometry metrics the
+     * committing endpoint computes plus a base64-encoded PNG of the
+     * compiled preview. base64 was chosen over a multipart/blob response
+     * because it gives a single uniform payload and the compiled PNG is
+     * small (~25-60 KB for a 1920×150 design, ~67-80 KB base64).
+     */
+    public function slicePreview(
+        Request $request,
+        ThemeImageSlicer $themeImageSlicer,
+    ): JsonResponse {
+        $validated = $this->validateSliceInput($request, requireMeta: false);
+
+        /** @var UploadedFile $sourceFile */
+        $sourceFile = $request->file('source_image');
+
+        /** @var User $user */
+        $user = $request->user();
+        $owner = User::query()->findOrFail($user->ownerAccountId());
+        $settings = TickerSetting::current($owner);
+
+        $result = $themeImageSlicer->sliceFromSingle(
+            $sourceFile->getRealPath(),
+            (float) $validated['split_1'],
+            (float) $validated['split_2'],
+            null,
+            (int) $settings->canvas_width,
+            returnPreview: true,
+            topPct: (float) ($validated['top_pct'] ?? 0.0),
+            bottomPct: (float) ($validated['bottom_pct'] ?? 100.0),
+            leftPct: (float) ($validated['left_pct'] ?? 0.0),
+            rightPct: (float) ($validated['right_pct'] ?? 100.0),
+        );
+
+        if (! is_array($result)) {
+            return response()->json([
+                'message' => 'Could not render the theme preview.',
+            ], 422);
+        }
+
+        return response()->json([
+            'preview_base64' => $result['preview_base64'] ?? null,
         ]);
+    }
+
+    public function slice(
+        Request $request,
+        ThemeImageSlicer $themeImageSlicer,
+        TickerStyleRepository $tickerStyles,
+    ): RedirectResponse {
+        $validated = $this->validateSliceInput($request, requireMeta: true);
 
         try {
-
-            /** @var UploadedFile $leftFile */
-            $leftFile = $request->file('title_image') ?? $request->file('left_image');
-            /** @var UploadedFile $middleFile */
-            $middleFile = $request->file('content_image') ?? $request->file('middle_image');
-            /** @var UploadedFile $rightFile */
-            $rightFile = $request->file('end_image') ?? $request->file('right_image');
+            /** @var UploadedFile $sourceFile */
+            $sourceFile = $request->file('source_image');
 
             $themeName = trim($request->string('theme_name')->toString());
             $authorName = trim($request->string('author_name')->toString());
@@ -167,73 +351,129 @@ class TickerDashboardController extends Controller
                 return back()->withErrors(['author_name' => 'The author name must contain at least one letter or number.']);
             }
 
-            $stitchMetrics = $themeImageStitcher->stitch(
-                $leftFile->getRealPath(),
-                $middleFile->getRealPath(),
-                $rightFile->getRealPath(),
-            );
-
-            if (! is_array($stitchMetrics)) {
-                return back()->withErrors(['stitch' => 'Failed to process images.']);
-            }
-
             /** @var User $user */
-            $user = Auth::user();
+            $user = $request->user();
             $owner = User::query()->findOrFail($user->ownerAccountId());
             $settings = TickerSetting::current($owner);
 
-            $customLabelLeft = $request->string('custom_label_left')->toString() ?: $stitchMetrics['custom_label_left'];
-            $customLabelWidth = $request->string('custom_label_width')->toString() ?: $stitchMetrics['custom_label_width'];
-            $customViewportLeft = $request->string('custom_viewport_left')->toString() ?: $stitchMetrics['custom_viewport_left'];
-            $customViewportRight = $request->string('custom_viewport_right')->toString() ?: $stitchMetrics['custom_viewport_right'];
+            $themeDir = public_path("ticker-styles/{$themeSlug}");
+
+            // Capture the previous custom theme BEFORE writing the new one
+            // so that a partial write (GD crash, disk full, validation
+            // error mid-loop) cannot delete the user's only custom theme.
+            // The old dir + compiled files are reclaimed only after the
+            // new theme is fully on disk and the settings point at it.
+            $previousStyle = $settings->ticker_style;
+            $previousSlug = is_string($previousStyle) && str_ends_with($previousStyle, '.png')
+                ? pathinfo($previousStyle, PATHINFO_FILENAME)
+                : null;
+
+            $sliceMetrics = $themeImageSlicer->sliceFromSingle(
+                $sourceFile->getRealPath(),
+                (float) $validated['split_1'],
+                (float) $validated['split_2'],
+                $themeDir,
+                (int) $settings->canvas_width,
+                returnPreview: false,
+                topPct: (float) ($validated['top_pct'] ?? 0.0),
+                bottomPct: (float) ($validated['bottom_pct'] ?? 100.0),
+                leftPct: (float) ($validated['left_pct'] ?? 0.0),
+                rightPct: (float) ($validated['right_pct'] ?? 100.0),
+            );
+
+            if (! is_array($sliceMetrics)) {
+                return back()->withErrors(['slice' => 'Failed to process images.']);
+            }
+
             $createdAt = now()->toDateTimeString();
 
-            $themeDir = public_path("ticker-styles/{$themeSlug}");
-            File::ensureDirectoryExists($themeDir);
+            // Strip the preview_base64 transient from the slice metrics
+            // before merging it into meta.json — this endpoint never sets
+            // returnPreview=true so it shouldn't be present, but
+            // defensively filtering the keys keeps any accidentally
+            // returned preview bytes out of the user's theme directory.
+            $persistedMetrics = array_intersect_key(
+                $sliceMetrics,
+                array_flip([
+                    'title_stamp_left_pct',
+                    'title_stamp_width_pct',
+                    'end_stamp_left_pct',
+                    'end_stamp_width_pct',
+                ]),
+            );
 
-            File::put($themeDir.'/title.png', (string) file_get_contents($leftFile->getRealPath()));
-            File::put($themeDir.'/content.png', (string) file_get_contents($middleFile->getRealPath()));
-            File::put($themeDir.'/end.png', (string) file_get_contents($rightFile->getRealPath()));
-
-            $meta = [
+            $meta = array_merge([
                 'name' => $themeName,
                 'theme_name' => $themeSlug,
                 'author' => $authorName,
                 'created_at' => $createdAt,
-                'custom_label_left' => $customLabelLeft,
-                'custom_label_width' => $customLabelWidth,
-                'custom_viewport_left' => $customViewportLeft,
-                'custom_viewport_right' => $customViewportRight,
-            ];
+                // Persist the user's chosen split percentages so
+                // TickerStyleRepository::compileThemes() can faithfully
+                // reconstruct the slot proportions every time it rebuilds
+                // the compiled PNG. Without these, the recompile would
+                // re-run slice() on the already-trimmed title/content/end
+                // PNGs and use their (post-trim) imagesx() values as the
+                // "original widths" — collapsing the chosen cut boundaries
+                // whenever the source had transparent padding inside a
+                // cut region.
+                'split_1' => (float) $validated['split_1'],
+                'split_2' => (float) $validated['split_2'],
+                // Persist the bounding-box percentages chosen at build time so
+                // the theme can be re-opened and edited later without forcing
+                // the user to re-drag the source image. The recompile path
+                // doesn't read these (the PNGs were already bbox-cropped at
+                // build time and live in /ticker-styles/{slug}/); they're
+                // kept purely as a faithful re-edit affordance.
+                'top_pct' => (float) ($validated['top_pct'] ?? 0.0),
+                'bottom_pct' => (float) ($validated['bottom_pct'] ?? 100.0),
+                'left_pct' => (float) ($validated['left_pct'] ?? 0.0),
+                'right_pct' => (float) ($validated['right_pct'] ?? 100.0),
+                // Always-on manual label-box percentages. The frontend
+                // theme builder writes defaults that fill the entire title
+                // slot when the user hasn't moved a label handle, and the
+                // validator enforces fit-inside-slot + minimum slack so a
+                // late manual edit can't push the box outside the slot.
+                // These keys are the single source of truth for the
+                // consumer: show.tsx prefers them whenever present.
+                'label_left_pct' => (float) $validated['label_left_pct'],
+                'label_width_pct' => (float) $validated['label_width_pct'],
+                'label_top_pct' => (float) $validated['label_top_pct'],
+                'label_height_pct' => (float) $validated['label_height_pct'],
+                'dynamic_content_stretch' => $request->boolean('dynamic_content_stretch'),
+            ], $persistedMetrics);
+
             File::put(
                 $themeDir.'/'.$themeSlug.'.json',
                 (string) json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
             );
 
-            app(TickerStyleRepository::class)->all();
-
-            $oldStyle = $settings->ticker_style;
-            if ($oldStyle && str_starts_with($oldStyle, 'stitched-')) {
-                $oldPath = public_path("ticker-styles/{$oldStyle}");
-                if (is_file($oldPath)) {
-                    @unlink($oldPath);
-                }
-                $oldJsonPath = public_path('ticker-styles/'.pathinfo($oldStyle, PATHINFO_FILENAME).'.json');
-                if (is_file($oldJsonPath)) {
-                    @unlink($oldJsonPath);
-                }
-            }
+            // Force the repository to compile any pending theme assets
+            // now that we've written this theme's trimmed PNGs. Same
+            // call as before (see prior version of this controller that
+            // used `app(TickerStyleRepository::class)->all()`), but once
+            // here without aliasing.
+            $tickerStyles->all();
 
             $compiledStyle = $themeSlug.'.png';
 
             $settings->update([
                 'ticker_style' => $compiledStyle,
                 'ticker_use_image_style' => true,
-                'custom_label_left' => $customLabelLeft,
-                'custom_label_width' => $customLabelWidth,
-                'custom_viewport_left' => $customViewportLeft,
-                'custom_viewport_right' => $customViewportRight,
             ]);
+
+            // Best-effort reclaim of the previous custom theme's files.
+            // Wrapped in its own try/catch so a partial cleanup failure
+            // (e.g. an orphaned read-only file) does not surface as a
+            // 500 after the new theme is already active.
+            if ($previousSlug !== null && $previousSlug !== $themeSlug) {
+                try {
+                    File::deleteDirectory(public_path("ticker-styles/{$previousSlug}"));
+                    File::delete(public_path("ticker-styles/compiled/{$previousSlug}.png"));
+                    File::delete(public_path("ticker-styles/compiled/{$previousSlug}.json"));
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
 
             Inertia::flash('toast', [
                 'type' => 'success',
@@ -245,7 +485,7 @@ class TickerDashboardController extends Controller
             report($exception);
 
             return back()->withErrors([
-                'stitch' => 'The theme could not be created.',
+                'slice' => 'The theme could not be created.',
             ]);
         }
     }

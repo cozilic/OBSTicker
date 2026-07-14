@@ -1,5 +1,7 @@
-import { Head, Link, usePage } from '@inertiajs/react';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { ArrowLeft, Plus, Upload } from 'lucide-react';
+import { useState } from 'react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +17,8 @@ type Theme = {
     label: string;
     url: string;
     author: string | null;
+    submissionStatus: 'pending' | 'approved' | 'rejected' | null;
+    submissionRejectionReason: string | null;
 };
 
 type Props = {
@@ -25,8 +29,45 @@ type Props = {
 
 export default function TickerThemePreview({ theme, themesUrl, createThemeUrl }: Props) {
     const { t } = useTranslation();
-    const { auth } = usePage<AuthProps>().props;
+    const { auth, features } = usePage<AuthProps & {
+        features: { themeOfficialCatalogSubmissionEnabled: boolean };
+    }>().props;
     const canManageThemes = auth.user !== null;
+    const canSubmitToOfficial =
+        canManageThemes &&
+        features.themeOfficialCatalogSubmissionEnabled &&
+        theme.submissionStatus === null;
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmitToOfficial = () => {
+        if (isSubmitting) {
+            return;
+        }
+
+        setIsSubmitting(true);
+        router.post(`/ticker-admin/themes/${theme.slug}/submit`, {}, {
+            onSuccess: () => router.flushAll(),
+            onFinish: () => setIsSubmitting(false),
+        });
+    };
+
+    const submissionBadgeClass = [
+        'rounded-full px-3 py-1',
+        theme.submissionStatus === 'pending' ? 'border-border bg-muted text-muted-foreground' : '',
+        theme.submissionStatus === 'approved'
+            ? 'border-transparent bg-emerald-500/15 text-emerald-500'
+            : '',
+        theme.submissionStatus === 'rejected' ? 'cursor-help' : '',
+    ]
+        .filter(Boolean)
+        .join(' ');
+
+    const submissionBadgeText =
+        theme.submissionStatus === 'pending'
+            ? `${t('pending')}...`
+            : theme.submissionStatus === 'rejected'
+                ? t('denied')
+                : t('approved');
 
     return (
         <>
@@ -75,14 +116,62 @@ export default function TickerThemePreview({ theme, themesUrl, createThemeUrl }:
                                 className="h-auto w-full"
                             />
                         </div>
-                        <div className="flex flex-wrap gap-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
                             <Badge variant="outline">
                                 {t('createdBy')}: {theme.author ?? '-'}
                             </Badge>
-                            <Badge variant="outline">
-                                {theme.value}
-                            </Badge>
+                            <Badge variant="outline">{theme.value}</Badge>
+                            {theme.submissionStatus ? (
+                                <Badge
+                                    variant={
+                                        theme.submissionStatus === 'approved'
+                                            ? 'secondary'
+                                            : theme.submissionStatus === 'pending'
+                                                ? 'outline'
+                                                : 'destructive'
+                                    }
+                                    title={
+                                        theme.submissionStatus === 'rejected'
+                                            ? (theme.submissionRejectionReason ?? undefined)
+                                            : undefined
+                                    }
+                                    className={submissionBadgeClass}
+                                >
+                                    {submissionBadgeText}
+                                </Badge>
+                            ) : null}
+                            {canSubmitToOfficial ? (
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={handleSubmitToOfficial}
+                                    disabled={isSubmitting}
+                                    className="ml-auto shrink-0 rounded-full"
+                                >
+                                    <Upload />
+                                    {isSubmitting
+                                        ? `${t('submitToOfficialThemes')}...`
+                                        : t('submitToOfficialThemes')}
+                                </Button>
+                            ) : null}
                         </div>
+                        {theme.submissionStatus === 'rejected' &&
+                        theme.submissionRejectionReason ? (
+                            <Alert>
+                                <AlertTitle>{t('deniedReason')}</AlertTitle>
+                                <AlertDescription>
+                                    {theme.submissionRejectionReason}
+                                </AlertDescription>
+                            </Alert>
+                        ) : theme.submissionStatus === 'pending' ? (
+                            <Alert>
+                                <AlertTitle>{t('pendingSubmission')}</AlertTitle>
+                                <AlertDescription>
+                                    {t('pendingSubmissionDescription')}
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
                     </CardContent>
                 </Card>
             </div>

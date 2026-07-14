@@ -7,10 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * @property string|null $ticker_style
  * @property bool $ticker_use_image_style
- * @property string|null $custom_label_left
- * @property string|null $custom_label_width
- * @property string|null $custom_viewport_left
- * @property string|null $custom_viewport_right
  */
 class TickerSetting extends Model
 {
@@ -39,10 +35,6 @@ class TickerSetting extends Model
         'require_auth_to_submit',
         'moderator_only_submissions',
         'show_rss',
-        'custom_label_left',
-        'custom_label_width',
-        'custom_viewport_left',
-        'custom_viewport_right',
     ];
 
     protected $attributes = [

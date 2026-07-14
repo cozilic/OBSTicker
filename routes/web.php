@@ -38,6 +38,10 @@ Route::get('ticker-admin/themes/{theme}/share', [TickerThemeController::class, '
 Route::get('ticker-admin/themes/{theme}/share/download', [TickerThemeController::class, 'download'])->name('ticker.themes.share.download');
 Route::post('ticker-admin/themes/{theme}/share/url', [TickerThemeController::class, 'generateShareUrl'])->name('ticker.themes.share.url');
 
+Route::get('themeshare/{uuid}', [TickerThemeController::class, 'publicShare'])
+    ->middleware('throttle:60,1')
+    ->name('ticker.themes.share.public');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::post('ticker-admin/themes', [TickerThemeController::class, 'store'])->name('ticker.themes.store');
@@ -45,7 +49,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('ticker-admin/themes/{theme}/submit', [ThemeSubmissionController::class, 'storeFromTheme'])->name('ticker.themes.submit');
 
     Route::put('ticker-admin/settings', [TickerDashboardController::class, 'update'])->name('ticker.settings.update');
-    Route::post('ticker-admin/settings/stitch', [TickerDashboardController::class, 'stitch'])->name('ticker.settings.stitch');
+    Route::post('ticker-admin/settings/stitch/preview', [TickerDashboardController::class, 'slicePreview'])->name('ticker.settings.stitch.preview');
+    Route::post('ticker-admin/settings/stitch', [TickerDashboardController::class, 'slice'])->name('ticker.settings.stitch');
     Route::post('ticker-admin/messages', [TickerMessageController::class, 'store'])->name('ticker.messages.store');
     Route::delete('ticker-admin/messages/{tickerMessage}', [TickerMessageController::class, 'destroy'])->name('ticker.messages.destroy');
     Route::post('ticker-admin/rss-feeds', [RssFeedController::class, 'store'])->name('ticker.rss-feeds.store');

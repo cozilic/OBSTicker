@@ -38,7 +38,12 @@ createInertiaApp({
         );
     },
     progress: {
-        color: '#4B5563',
+        color: 'var(--primary)',
+        // Brief navigations (e.g. opening the dashboard) complete inside
+        // 200ms; showing the bar for those feels like a flash rather than
+        // feedback. The delay hides the bar entirely on snappy visits and
+        // only reveals it for slow loads.
+        delay: 200,
     },
 });
 

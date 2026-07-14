@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ModerateThemeSubmissionRequest;
 use App\Http\Requests\StoreThemeSubmissionRequest;
+use App\Models\PublishedTheme;
 use App\Models\ThemeSubmission;
 use App\Models\User;
 use App\Services\TickerStyleRepository;
@@ -11,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -290,6 +292,10 @@ class ThemeSubmissionController extends Controller
             ]);
         }
 
+        // Awake the theme: run the archive through the catalog importer (writes
+        // the theme assets that OBS' browser source reads) and snapshot the
+        // metadata into the published_themes table. Submissions stay invisible
+        // until this step succeeds — see published_themes migration.
         $archiveAbsolutePath = Storage::disk('local')->path($themeSubmission->archive_path);
         if (! is_file($archiveAbsolutePath)) {
             return back()->withErrors([
@@ -297,37 +303,85 @@ class ThemeSubmissionController extends Controller
             ]);
         }
 
+        $userId = Auth::id();
+        $cleanupSlug = $themeSubmission->theme_slug;
+
+        // Fail fast if a previously-approved theme already owns this slug. The
+        // importer would otherwise overwrite the published assets and the
+        // unique constraint on `published_themes.theme_slug` would surface as
+        // a generic "could not be approved" reply.
+        if (PublishedTheme::query()->where('theme_slug', $cleanupSlug)->exists()) {
+            return back()->withErrors([
+                'submission' => 'A public theme with that slug already exists.',
+            ]);
+        }
+
         try {
-            $theme = $tickerStyles->importThemeZip(
-                new UploadedFile(
-                    $archiveAbsolutePath,
-                    basename($archiveAbsolutePath),
-                    'application/zip',
-                    null,
-                    true,
-                ),
-            );
+            $publishedTheme = DB::transaction(function () use (
+                $themeSubmission,
+                $tickerStyles,
+                $archiveAbsolutePath,
+                $userId,
+                &$cleanupSlug,
+            ): PublishedTheme {
+                // Importer wipes any stale assets for the same slug, so a stale
+                // filesystem entry from a previous import can't survive.
+                $imported = $tickerStyles->importThemeZip(
+                    new UploadedFile(
+                        $archiveAbsolutePath,
+                        basename($archiveAbsolutePath),
+                        'application/zip',
+                        null,
+                        true,
+                    ),
+                );
+
+                // Update the cleanup target by reference so a DB failure after
+                // a successful import can still scrub the new assets.
+                $cleanupSlug = $imported['slug'];
+
+                $publishedTheme = PublishedTheme::query()->create([
+                    'theme_slug' => $imported['slug'],
+                    'theme_name' => $imported['slug'],
+                    'theme_label' => $imported['label'],
+                    'author_name' => $imported['author'],
+                    'original_submission_id' => $themeSubmission->id,
+                    'approved_by_id' => $userId,
+                    'approved_at' => now(),
+                ]);
+
+                $themeSubmission->update([
+                    'status' => 'approved',
+                    'reviewed_by_id' => $userId,
+                    'reviewed_at' => now(),
+                    'published_at' => now(),
+                    'published_theme_slug' => $imported['slug'],
+                    'published_theme_id' => $publishedTheme->id,
+                ]);
+
+                return $publishedTheme;
+            });
         } catch (\Throwable $exception) {
             report($exception);
+
+            // Best-effort scrub of any half-written filesystem state so a failed
+            // approval doesn't leave the catalog pointing at stale assets.
+            try {
+                $tickerStyles->deleteTheme($cleanupSlug);
+            } catch (\Throwable) {
+                // ignore — the next successful approve will overwrite it.
+            }
 
             return back()->withErrors([
                 'submission' => 'The submission could not be approved.',
             ]);
         }
 
-        $themeSubmission->update([
-            'status' => 'approved',
-            'reviewed_by_id' => Auth::id(),
-            'reviewed_at' => now(),
-            'published_at' => now(),
-            'published_theme_slug' => $theme['slug'],
-        ]);
-
         Storage::disk('local')->delete($themeSubmission->archive_path);
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => 'Theme approved and published.',
+            'message' => 'Theme approved.',
         ]);
 
         return back();
@@ -355,6 +409,8 @@ class ThemeSubmissionController extends Controller
             'rejection_reason' => $validated['rejection_reason'] ?? null,
         ]);
 
+        // Submissions stay invisible until they're approved, so there's no
+        // catalog entry to clean up here.
         Storage::disk('local')->delete($themeSubmission->archive_path);
 
         Inertia::flash('toast', [
@@ -378,6 +434,8 @@ class ThemeSubmissionController extends Controller
             ]);
         }
 
+        // Pending submissions never reach the catalog, so we just delete the
+        // cached archive and the row.
         Storage::disk('local')->delete($themeSubmission->archive_path);
         $themeSubmission->delete();
 
@@ -421,14 +479,43 @@ class ThemeSubmissionController extends Controller
         $filename = $themeSlug.'-'.Str::uuid()->toString().'.zip';
 
         if (! empty($validated['theme_url'])) {
-            $response = Http::timeout(15)->get($validated['theme_url']);
-            if (! $response->successful()) {
-                throw new \RuntimeException('The theme URL could not be downloaded.');
+            $url = $validated['theme_url'];
+            $storedPath = $directory.'/'.$filename;
+
+            // Bypass HTTP completely when the URL points at a share file on this
+            // same host. This avoids server-to-self connectivity issues that can
+            // trigger cURL timeouts when re-downloading the file we just wrote.
+            $localSharePath = $this->resolveLocalSharePath($url);
+            if ($localSharePath !== null) {
+                Storage::disk('local')->put($storedPath, File::get($localSharePath));
+
+                return $storedPath;
             }
 
-            Storage::disk('local')->put($directory.'/'.$filename, $response->body());
+            // Stream the download straight to disk with a generous timeout and
+            // a connection-only timeout so we fail fast on DNS / TLS handshakes
+            // that hang. Retries cover transient network blips.
+            $absolutePath = Storage::disk('local')->path($storedPath);
 
-            return $directory.'/'.$filename;
+            try {
+                $response = Http::connectTimeout(10)
+                    ->timeout(120)
+                    ->retry(3, 2000)
+                    ->sink($absolutePath)
+                    ->get($url);
+            } catch (\Throwable $exception) {
+                @unlink($absolutePath);
+
+                throw new \RuntimeException('The theme URL could not be downloaded (network error or timeout).');
+            }
+
+            if (! $response->successful()) {
+                @unlink($absolutePath);
+
+                throw new \RuntimeException('The theme URL could not be downloaded (HTTP '.$response->status().').');
+            }
+
+            return $storedPath;
         }
 
         $uploaded = $request->file('theme_zip');
@@ -439,6 +526,62 @@ class ThemeSubmissionController extends Controller
         Storage::disk('local')->putFileAs($directory, $uploaded, $filename);
 
         return $directory.'/'.$filename;
+    }
+
+    /**
+     * Decide whether the theme URL points at a share file we can read directly
+     * from disk (avoids a server-to-self HTTP roundtrip). Returns the absolute
+     * storage path when the file is on the same host and matches the public
+     * share endpoint; throws a RuntimeException for any other same-host URL;
+     * returns null when the URL is on a different host so the caller can fall
+     * back to an HTTP download.
+     */
+    private function resolveLocalSharePath(string $url): ?string
+    {
+        $expectedHost = $this->resolveExpectedHost();
+        if ($expectedHost === '') {
+            return null;
+        }
+
+        $urlHost = parse_url($url, PHP_URL_HOST);
+        if (! is_string($urlHost)) {
+            return null;
+        }
+
+        if (strcasecmp($urlHost, $expectedHost) !== 0) {
+            // Different host – let the caller download over HTTP.
+            return null;
+        }
+
+        // Same host – only allow direct reads of public share files, to avoid
+        // the server being coaxed into fetching its own private URLs.
+        $urlPath = parse_url($url, PHP_URL_PATH);
+        if (! is_string($urlPath) || preg_match(
+            '#^/themeshare/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$#',
+            $urlPath,
+            $matches,
+        ) !== 1) {
+            throw new \RuntimeException('Only public share URLs from this host are allowed.');
+        }
+
+        $localPath = storage_path('app/private/theme-shares/'.$matches[1].'.zip');
+        if (! is_file($localPath)) {
+            throw new \RuntimeException('The share file is no longer available.');
+        }
+
+        return $localPath;
+    }
+
+    private function resolveExpectedHost(): string
+    {
+        $host = request()->getHost();
+        if ($host !== '') {
+            return $host;
+        }
+
+        $appUrlHost = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+        return is_string($appUrlHost) ? $appUrlHost : '';
     }
 
     private function storeThemeArchive(string $archivePath, string $themeSlug): string

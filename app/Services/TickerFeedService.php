@@ -39,11 +39,7 @@ class TickerFeedService
      *         crawl_duration_seconds: int,
      *         message_display_seconds: int,
      *         poll_interval_seconds: int,
-     *         show_rss: bool,
-     *         custom_label_left: string|null,
-     *         custom_label_width: string|null,
-     *         custom_viewport_left: string|null,
-     *         custom_viewport_right: string|null
+     *         show_rss: bool
      *     },
      *     items: array<int, array{type: string, label: string|null, text: string, url: string|null}>
      * }
@@ -128,38 +124,11 @@ class TickerFeedService
      *     crawl_duration_seconds: int,
      *     message_display_seconds: int,
      *     poll_interval_seconds: int,
-     *     show_rss: bool,
-     *     custom_label_left: string|null,
-     *     custom_label_width: string|null,
-     *     custom_viewport_left: string|null,
-     *     custom_viewport_right: string|null
+     *     show_rss: bool
      * }
      */
     private function settingsPayload(TickerSetting $settings): array
     {
-        $customLabelLeft = $settings->custom_label_left;
-        $customLabelWidth = $settings->custom_label_width;
-        $customViewportLeft = $settings->custom_viewport_left;
-        $customViewportRight = $settings->custom_viewport_right;
-
-        if ($settings->ticker_style) {
-            $themeSlug = pathinfo($settings->ticker_style, PATHINFO_FILENAME);
-            $metaPath = public_path('ticker-styles/compiled/'.$themeSlug.'.json');
-            if (! is_file($metaPath)) {
-                $metaPath = public_path('ticker-styles/'.$themeSlug.'/'.$themeSlug.'.json');
-            }
-
-            if (is_file($metaPath)) {
-                $meta = json_decode((string) file_get_contents($metaPath), true);
-                if (is_array($meta)) {
-                    $customLabelLeft = $meta['custom_label_left'] ?? $customLabelLeft;
-                    $customLabelWidth = $meta['custom_label_width'] ?? $customLabelWidth;
-                    $customViewportLeft = $meta['custom_viewport_left'] ?? $customViewportLeft;
-                    $customViewportRight = $meta['custom_viewport_right'] ?? $customViewportRight;
-                }
-            }
-        }
-
         return [
             'headline' => $settings->headline,
             'rss_headline' => $settings->rss_headline,
@@ -183,10 +152,6 @@ class TickerFeedService
             'message_display_seconds' => $settings->message_display_seconds,
             'poll_interval_seconds' => $settings->poll_interval_seconds,
             'show_rss' => $settings->show_rss,
-            'custom_label_left' => $customLabelLeft,
-            'custom_label_width' => $customLabelWidth,
-            'custom_viewport_left' => $customViewportLeft,
-            'custom_viewport_right' => $customViewportRight,
         ];
     }
 
@@ -227,11 +192,7 @@ class TickerFeedService
      *         crawl_duration_seconds: int,
      *         message_display_seconds: int,
      *         poll_interval_seconds: int,
-     *         show_rss: bool,
-     *         custom_label_left: string|null,
-     *         custom_label_width: string|null,
-     *         custom_viewport_left: string|null,
-     *         custom_viewport_right: string|null
+     *         show_rss: bool
      *     },
      *     items: array<int, array{type: string, label: string|null, text: string, url: string|null}>
      * }

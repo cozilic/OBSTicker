@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $source_type
  * @property string|null $source_url
  * @property string $archive_path
+ * @property int|null $published_theme_id
  * @property string $status
  * @property string|null $notes
  * @property int|null $reviewed_by_id
@@ -26,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read User|null $reviewer
+ * @property-read PublishedTheme|null $publishedTheme
  */
 class ThemeSubmission extends Model
 {
@@ -41,6 +43,7 @@ class ThemeSubmission extends Model
         'source_type',
         'source_url',
         'archive_path',
+        'published_theme_id',
         'status',
         'notes',
         'reviewed_by_id',
@@ -68,6 +71,17 @@ class ThemeSubmission extends Model
     {
         /** @var BelongsTo<User, ThemeSubmission> $relation */
         $relation = $this->belongsTo(User::class, 'reviewed_by_id');
+
+        return $relation;
+    }
+
+    /**
+     * @return BelongsTo<PublishedTheme, ThemeSubmission>
+     */
+    public function publishedTheme(): BelongsTo
+    {
+        /** @var BelongsTo<PublishedTheme, ThemeSubmission> $relation */
+        $relation = $this->belongsTo(PublishedTheme::class, 'published_theme_id');
 
         return $relation;
     }

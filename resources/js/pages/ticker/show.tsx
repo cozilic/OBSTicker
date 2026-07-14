@@ -26,10 +26,6 @@ type TickerPayload = {
         crawl_duration_seconds: number;
         message_display_seconds: number;
         poll_interval_seconds: number;
-        custom_label_left: string | null;
-        custom_label_width: string | null;
-        custom_viewport_left: string | null;
-        custom_viewport_right: string | null;
     };
     items: {
         type: string;
@@ -66,10 +62,6 @@ const fallbackPayload: TickerPayload = {
         crawl_duration_seconds: 35,
         message_display_seconds: 18,
         poll_interval_seconds: 15,
-        custom_label_left: null,
-        custom_label_width: null,
-        custom_viewport_left: null,
-        custom_viewport_right: null,
     },
     items: [],
 };
@@ -100,11 +92,55 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const [tickerTextFontSize, setTickerTextFontSize] = useState(22);
     const [viewportScale, setViewportScale] = useState(1);
     const [tickerStartOffset, setTickerStartOffset] = useState(100);
+    const [themeMeta, setThemeMeta] = useState<{
+        split_1: number;
+        split_2: number;
+        left_pct: number;
+        right_pct: number;
+        // Source-natural bbox percentages persisted by the theme
+        // builder. Required for the manual label-box coordinate
+        // remap below — the user's source-percent label rect is
+        // projected into compiled-percent using these as the
+        // horizontal/vertical bounds of the source's title cut.
+        top_pct: number;
+        bottom_pct: number;
+        // Visible-stamp coordinates in canvas-percent space, written
+        // by ThemeImageSlicer::slice() and persisted in meta.json.
+        // Sourced after CONTAIN-fit + asymmetric anchoring so they
+        // describe the actual rendered stamp, not the source's slot
+        // boundaries. Optional so themes that haven't been recompiled
+        // since this metric was added (or hand-edited meta.json files)
+        // still render with the slot-based fallback below.
+        title_stamp_left_pct?: number;
+        title_stamp_width_pct?: number;
+        end_stamp_left_pct?: number;
+        end_stamp_width_pct?: number;
+        // Manual label-box percentages in SOURCE-NATURAL space (NOT
+        // canvas-percent). The artist drags the box on the unmodified
+        // source image in the theme builder, so the values are
+        // expressed in the same coordinate system as split_1, left_pct,
+        // etc. The consumer remaps these into compiled/canvas-percent
+        // via `manualLabelBox` below so the live overlay lands over
+        // the actual visible stamp rather than over the pre-fit
+        // source bbox. Themes that pre-date the new theme-builder
+        // flow lack these keys and fall through to the alpha-aware
+        // visibleBounds path.
+        label_left_pct?: number;
+        label_width_pct?: number;
+        label_top_pct?: number;
+        label_height_pct?: number;
+        // Round-trip flag toggled in the theme builder —
+        // when true, content stretches to the bounding-box
+        // right edge and the end region collapses. Optional
+        // so legacy meta.json that predates this field still
+        // loads with the non-dynamic runtime defaults.
+        dynamic_content_stretch?: boolean | undefined;
+    } | null>(null);
     const isVisible = payload.items.length > 0;
     const hasThemeSkin = Boolean(payload.settings.ticker_style);
     const useTickerSkin = !useChromaKey && hasThemeSkin;
     const tickerSkinUrl = useTickerSkin
-        ? payload.settings.ticker_style_url ?? defaultTickerSkinUrl
+        ? (payload.settings.ticker_style_url ?? defaultTickerSkinUrl)
         : null;
     const currentItem = useMemo(() => {
         if (payload.items.length === 0) {
@@ -167,11 +203,132 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
           : 'col-start-2';
     const shellPaddingX = clamp(Math.round(shellHeight * 0.22), 8, 20);
     const labelMaxFontSize = clamp(Math.round(shellHeight * 0.34), 14, 22);
+    // WYCIWYG: when the ticker has a theme skin the label sits over
+    // the visible title stamp, so fitTextToWidth's budget must come
+    // from THAT stamp's width (in viewport-scaled px) — not a
+    // hardcoded slice of canvas_width. Sizing to 13% of canvas_width
+    // (≈250px on a 1920px design) caused text to spill past any stamp
+    // narrower than that budget. We derive the budget from the same
+    // `title_stamp_width_pct` meta.json coordinate the label <div> is
+    // positioned against, fall back to the source slot width
+    // (themeMeta.split_1 - left_pct) for themes whose meta.json predates
+    // the visible-stamp metrics, and fall back to the legacy 13% only
+    // for old themes with no meta.json at all. The 20px floor keeps a
+    // vanishingly small stamp from collapsing the headline to a
+    // single-character minSize fallback.
+    //
+    // Manual label override beats the alpha-aware chain: every theme
+    // committed through the new theme-builder sends explicit
+    // label_width_pct into meta.json, so this branch is now the
+    // dominant path for any current build.
+    //
+    // `manualLabelBox` is the SOURCE-PERCENT → COMPILED-PERCENT
+    // remap of the user's label rect. Without it, the headline's
+    // `fitTextToWidth` budget would scale to the source-percent
+    // width (e.g. 25% of canvas = 480px on a 1920 design) instead
+    // of the much smaller compiled stamp width (e.g. 4% of canvas
+    // = 80px), and the headline would render larger than the visible
+    // title stamp can carry — which is exactly the "text outside
+    // the box" symptom the user pushed back on.
+    const manualLabelBox = useMemo(() => {
+        if (themeMeta === null) {
+            return null;
+        }
+
+        if (
+            typeof themeMeta.label_left_pct !== 'number' ||
+            typeof themeMeta.label_width_pct !== 'number' ||
+            typeof themeMeta.label_top_pct !== 'number' ||
+            typeof themeMeta.label_height_pct !== 'number'
+        ) {
+            return null;
+        }
+
+        // Horizontal remap: source's title cut is [left_pct, split_1]
+        // in source-percent; compiled title stamp is
+        // [title_stamp_left_pct, title_stamp_left_pct + title_stamp_width_pct]
+        // in canvas-percent. Project the user's source-percent label
+        // rect into the compiled stamp's rect with a linear map.
+        // Falls back to the source's slot width when the alpha-aware
+        // metrics are missing (legacy meta.json), which means the
+        // remap becomes a no-op and the label stays in source space
+        // — visually wrong but never crashes.
+        const titleSourceRange = Math.max(
+            0.01,
+            themeMeta.split_1 - themeMeta.left_pct,
+        );
+        const titleStampWidth =
+            typeof themeMeta.title_stamp_width_pct === 'number'
+                ? themeMeta.title_stamp_width_pct
+                : titleSourceRange;
+        const titleStampLeft =
+            typeof themeMeta.title_stamp_left_pct === 'number'
+                ? themeMeta.title_stamp_left_pct
+                : themeMeta.left_pct;
+
+        const left = clamp(
+            titleStampLeft +
+                ((themeMeta.label_left_pct - themeMeta.left_pct) /
+                    titleSourceRange) *
+                    titleStampWidth,
+            0,
+            100,
+        );
+        const width = clamp(
+            (themeMeta.label_width_pct / titleSourceRange) * titleStampWidth,
+            0,
+            100,
+        );
+
+        // Vertical remap: source's title cut runs from bboxTop to
+        // bboxBottom in source-percent. The compiled slot is
+        // top-aligned and occupies the full canvas height, so the
+        // vertical map is a linear projection from
+        // [bboxTop, bboxBottom] onto [0, 100]%. With the user's
+        // default bbox (0..100) this is an identity, so a fresh
+        // theme behaves the same as before. Crops that tighten the
+        // bbox make the remap non-trivial.
+        const verticalRange = Math.max(
+            0.01,
+            themeMeta.bottom_pct - themeMeta.top_pct,
+        );
+        const top = clamp(
+            ((themeMeta.label_top_pct - themeMeta.top_pct) / verticalRange) *
+                100,
+            0,
+            100,
+        );
+        const height = clamp(
+            (themeMeta.label_height_pct / verticalRange) * 100,
+            0,
+            100,
+        );
+
+        return { left, top, width, height };
+    }, [themeMeta]);
+
+    const labelStampPct = useTickerSkin
+        ? manualLabelBox !== null
+            ? manualLabelBox.width
+            : themeMeta !== null &&
+                typeof themeMeta.title_stamp_width_pct === 'number'
+              ? themeMeta.title_stamp_width_pct
+              : themeMeta !== null
+                ? Math.max(0, themeMeta.split_1 - themeMeta.left_pct)
+                : 13
+        : null;
     const labelFontSize = fitTextToWidth(headlineText.toUpperCase(), {
         maxSize: Math.max(10, Math.round(labelMaxFontSize * viewportScale)),
         minSize: 10,
         maxWidth: useTickerSkin
-            ? Math.round(payload.settings.canvas_width * 0.13)
+            ? Math.max(
+                  20,
+                  Math.round(
+                      ((labelStampPct ?? 13) / 100) *
+                          payload.settings.canvas_width *
+                          viewportScale,
+                  ),
+              )
             : Math.max(0, labelWidth - shellPaddingX * 2),
         fontWeight: '700',
     });
@@ -201,9 +358,16 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
             return '';
         }
 
-        return currentItem.label
-            ? `${currentItem.label}: ${currentItem.text}`
-            : currentItem.text;
+        // The rolling content-region text holds ONLY the body of the
+        // current item — not the source label that was historically
+        // prepended here as `${label}: ${text}`. Title region already
+        // shows the static headline (rss_headline / user_headline /
+        // headline fallback); the context region should therefore
+        // contain just the item body. Mixing the source label into
+        // the rolling stream produced the appearance of "label text
+        // in the context scroll" — the exact layout the user has
+        // pushed back on for several iterations.
+        return currentItem.text;
     }, [currentItem]);
     const tickerMinDurationSeconds = clamp(
         payload.settings.crawl_duration_seconds,
@@ -232,36 +396,229 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
         '--lower-third-out-duration': shellAnimationOutDuration,
     };
     const defaultSkinLabelStyle: CSSProperties = useTickerSkin
-        ? {
-              top: 0,
-              bottom: 0,
-              left:
-                  payload.settings.custom_label_left &&
-                  payload.settings.custom_viewport_right
-                      ? labelIsRight
-                          ? `calc(100% - ${payload.settings.custom_viewport_right})`
-                          : payload.settings.custom_label_left
-                      : '8.5%',
-              width:
-                  (labelIsRight
-                      ? payload.settings.custom_viewport_right
-                      : payload.settings.custom_label_width) ?? '13.25%',
-          }
+        ? themeMeta !== null
+            ? // MANUAL FIRST: when the theme builder saved an explicit
+              // label rect (the new theme-builder path), use the
+              // `manualLabelBox` remap (source-percent → compiled-
+              // percent) as the lone anchor for both axes. The
+              // artist's box is drawn on the source image so its
+              // coordinates are in source-percent; the live ticker
+              // renders over the compiled PNG, so the rect must be
+              // projected into the compiled stamp's coordinate
+              // space or the headline lands outside the title
+              // stamp. Vertical positioning switches from
+              // top:0/bottom:0 to top + height so the headline truly
+              // sits inside the artist-placed rectangle instead of
+              // auto-stretching to the title-slot height.
+              manualLabelBox !== null
+                ? {
+                      top: `${manualLabelBox.top}%`,
+                      height: `${manualLabelBox.height}%`,
+                      bottom: 'auto',
+                      left: `${manualLabelBox.left}%`,
+                      width: `${manualLabelBox.width}%`,
+                  }
+                : // WYCIWYG: position the label over the VISIBLE title
+                  // stamp, not the source's slot. meta.json's
+                  // title_stamp_left_pct / title_stamp_width_pct describe
+                  // where the stamp ends up after CONTAIN-fit +
+                  // right-anchoring, so the label sits exactly over the
+                  // visible artwork. We fall back to slot boundaries
+                  // ([left_pct, split_1]) when a theme's meta.json predates
+                  // the metric so previously-compiled themes keep rendering
+                  // rather than regressing to the hardcoded 13% / 5%
+                  // defaults that the live ticker used before the
+                  // visible-stamp metrics existed.
+                  {
+                      top: 0,
+                      bottom: 0,
+                      left:
+                          typeof themeMeta.title_stamp_left_pct === 'number'
+                              ? `${themeMeta.title_stamp_left_pct}%`
+                              : `${themeMeta.left_pct}%`,
+                      width:
+                          typeof themeMeta.title_stamp_width_pct === 'number'
+                              ? `${themeMeta.title_stamp_width_pct}%`
+                              : `${Math.max(0, themeMeta.split_1 - themeMeta.left_pct)}%`,
+                  }
+            : // Legacy themes without meta.json (no cuts+bbox persisted)
+              // fall through to a reasonable default — these numbers
+              // align with the typical ticker-banner layout where the
+              // title stamp occupies the first ~13% of the canvas.
+              {
+                  top: 0,
+                  bottom: 0,
+                  left: '0%',
+                  width: '13%',
+              }
         : {};
+
     const defaultSkinTickerViewportStyle: CSSProperties = useTickerSkin
-        ? {
-              top: 0,
-              bottom: 0,
-              left:
-                  (labelIsRight
-                      ? payload.settings.custom_label_width
-                      : payload.settings.custom_viewport_left) ?? '23%',
-              right:
-                  (labelIsRight
-                      ? payload.settings.custom_viewport_left
-                      : payload.settings.custom_viewport_right) ?? '9.5%',
-          }
+        ? themeMeta !== null
+            ? // Viewport spans the CONTENT SLOT. When
+              // dynamic_content_stretch is on (theme-builder flag
+              // persisted in meta.json) the end region has zero
+              // width and content stretches all the way to the
+              // bounding-box right edge — we mirror that with
+              // right: 100 - right_pct — same effect as if split_2
+              // were equal to right_pct (which is exactly what the
+              // controller hard-clamps split_2 to on the server).
+              // Without the flag, the viewport stays [split_1,
+              // split_2] and the scrolling text wraps before the
+              // end stamp.
+              {
+                  top: 0,
+                  bottom: 0,
+                  left: `${themeMeta.split_1}%`,
+                  right: `${Math.max(0, 100 - themeMeta.split_2)}%`,
+              }
+            : {
+                  top: 0,
+                  bottom: 0,
+                  left: '13%',
+                  right: '5%',
+              }
         : {};
+
+    useEffect(() => {
+        // Theme cuts (split_1, split_2 and the bbox bounds) live in the
+        // theme's meta.json next to the compiled PNG. Fetch it whenever
+        // the active skin changes so the label and viewport overlays
+        // align with the title and content stamps the user laid out in
+        // the theme builder. The consumer's `defaultSkinLabelStyle` /
+        // `defaultSkinTickerViewportStyle` early-return `{}` whenever
+        // `useTickerSkin` is false, so we don't have to clear
+        // `themeMeta` synchronously when the skin becomes inactive —
+        // stale meta is harmless because it never reaches the DOM.
+        //
+        // Cancellation goes through AbortController so a rapid theme
+        // switch can't overwrite the new theme's metadata with the
+        // previous one's response.
+        if (!useTickerSkin || !tickerSkinUrl) {
+            return undefined;
+        }
+
+        const metaUrl = tickerSkinUrl.replace(/\.png(?=$|\?)/, '.json');
+        const controller = new AbortController();
+
+        void fetch(metaUrl, {
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+        })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((data: unknown) => {
+                if (controller.signal.aborted) {
+                    return;
+                }
+
+                if (data === null || typeof data !== 'object') {
+                    // 404 or non-JSON response; the theme has no live
+                    // meta.json, so fall back to the hardcoded
+                    // percentages in the consumer instead of leaking
+                    // the previous theme's positions into the new one.
+                    setThemeMeta(null);
+
+                    return;
+                }
+
+                const record = data as {
+                    split_1?: unknown;
+                    split_2?: unknown;
+                    left_pct?: unknown;
+                    right_pct?: unknown;
+                    top_pct?: unknown;
+                    bottom_pct?: unknown;
+                    title_stamp_left_pct?: unknown;
+                    title_stamp_width_pct?: unknown;
+                    end_stamp_left_pct?: unknown;
+                    end_stamp_width_pct?: unknown;
+                    label_left_pct?: unknown;
+                    label_width_pct?: unknown;
+                    label_top_pct?: unknown;
+                    label_height_pct?: unknown;
+                };
+
+                if (
+                    typeof record.split_1 !== 'number' ||
+                    typeof record.split_2 !== 'number'
+                ) {
+                    // Legacy theme compiled before cuts+bbox were
+                    // persisted. Hardcoded percentages in the consumer
+                    // are the right fallback here too.
+                    setThemeMeta(null);
+
+                    return;
+                }
+
+                setThemeMeta({
+                    split_1: record.split_1,
+                    split_2: record.split_2,
+                    left_pct:
+                        typeof record.left_pct === 'number'
+                            ? record.left_pct
+                            : 0,
+                    right_pct:
+                        typeof record.right_pct === 'number'
+                            ? record.right_pct
+                            : 100,
+                    top_pct:
+                        typeof record.top_pct === 'number' ? record.top_pct : 0,
+                    bottom_pct:
+                        typeof record.bottom_pct === 'number'
+                            ? record.bottom_pct
+                            : 100,
+                    title_stamp_left_pct:
+                        typeof record.title_stamp_left_pct === 'number'
+                            ? record.title_stamp_left_pct
+                            : undefined,
+                    title_stamp_width_pct:
+                        typeof record.title_stamp_width_pct === 'number'
+                            ? record.title_stamp_width_pct
+                            : undefined,
+                    end_stamp_left_pct:
+                        typeof record.end_stamp_left_pct === 'number'
+                            ? record.end_stamp_left_pct
+                            : undefined,
+                    end_stamp_width_pct:
+                        typeof record.end_stamp_width_pct === 'number'
+                            ? record.end_stamp_width_pct
+                            : undefined,
+                    label_left_pct:
+                        typeof record.label_left_pct === 'number'
+                            ? record.label_left_pct
+                            : undefined,
+                    label_width_pct:
+                        typeof record.label_width_pct === 'number'
+                            ? record.label_width_pct
+                            : undefined,
+                    label_top_pct:
+                        typeof record.label_top_pct === 'number'
+                            ? record.label_top_pct
+                            : undefined,
+                    label_height_pct:
+                        typeof record.label_height_pct === 'number'
+                            ? record.label_height_pct
+                            : undefined,
+                });
+            })
+            .catch(() => {
+                // Aborted requests surface here as AbortError and
+                // are expected on cleanup; the next skin's effect will
+                // set its own themeMeta. Real failures (network drop
+                // or a server 500 on a non-aborted fetch) must clear
+                // stale meta so the next render doesn't apply the
+                // previous theme's positions to the current skin.
+                if (controller.signal.aborted) {
+                    return;
+                }
+
+                setThemeMeta(null);
+            });
+
+        return (): void => {
+            controller.abort();
+        };
+    }, [useTickerSkin, tickerSkinUrl]);
 
     useLayoutEffect(() => {
         if (!currentItem) {
@@ -522,7 +879,18 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                                 : chromaLabelBackground,
                             color: useTickerSkin ? '#ffffff' : chromaLabelText,
                             fontSize: `${labelFontSize}px`,
-                            paddingInline: `${shellPaddingX}px`,
+                            // Padding only applies inside the styled
+                            // grid cell (non-ticker-skin) so the
+                            // headline chip has breathing room from
+                            // its own background. On the ticker-skin
+                            // path the label <div> IS positioned over
+                            // the visible stamp, so internal padding
+                            // would eat into the stamp's textable
+                            // area and force fitTextToWidth to
+                            // under-budget the headline.
+                            paddingInline: useTickerSkin
+                                ? '0px'
+                                : `${shellPaddingX}px`,
                             textShadow: useTickerSkin
                                 ? '0 1px 8px rgb(0 0 0 / 0.45)'
                                 : undefined,

@@ -24,11 +24,26 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if ($this->app->environment('production')) {
-            URL::forceScheme('https');
-        }
+        $this->forceHttpsForAssetUrls();
 
         $this->configureDefaults();
+    }
+
+    /**
+     * Force the URL generator to use HTTPS whenever the app is in production
+     * OR APP_URL itself points at an https deployment (e.g. a production
+     * server whose APP_ENV isn't named "production" but whose APP_URL clearly
+     * uses https). Without this, every URL helper (url(), route(), asset(),
+     * Vite's @vite directive, signed URLs, etc.) would otherwise follow the
+     * scheme baked into APP_URL — which triggers mixed-content blocks in
+     * browsers when APP_URL is accidentally misconfigured to http on a
+     * public site served over HTTPS.
+     */
+    protected function forceHttpsForAssetUrls(): void
+    {
+        if ($this->app->isProduction() || str_starts_with((string) config('app.url'), 'https://')) {
+            URL::forceScheme('https');
+        }
     }
 
     /**

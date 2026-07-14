@@ -54,3 +54,18 @@ export function fitTextToWidth(
 
     return options.minSize;
 }
+
+export function formatFileSize(bytes: number, locale: string): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return '0 B';
+    }
+
+    const megabytes = bytes / (1024 * 1024);
+
+    return new Intl.NumberFormat(locale, {
+        style: 'unit',
+        unit: 'megabytes',
+        unitDisplay: 'short',
+        maximumFractionDigits: 1,
+    }).format(megabytes);
+}

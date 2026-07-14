@@ -42,6 +42,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { useThemeZipSizeGuard } from '@/lib/hooks/use-theme-zip-size-guard';
 import { useTranslation } from '@/lib/i18n';
 import themesRoutes from '@/routes/ticker/themes';
 import themeShareRoutes from '@/routes/ticker/themes/share';
@@ -109,14 +110,21 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const [themeZip, setThemeZip] = useState<File | null>(null);
     const [isImportingUrl, setIsImportingUrl] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    const [importingThemeSlug, setImportingThemeSlug] = useState<string | null>(null);
-    const [submittingThemeSlug, setSubmittingThemeSlug] = useState<string | null>(null);
+    const [importingThemeSlug, setImportingThemeSlug] = useState<string | null>(
+        null,
+    );
+    const [submittingThemeSlug, setSubmittingThemeSlug] = useState<
+        string | null
+    >(null);
     const [shareTheme, setShareTheme] = useState<Theme | null>(null);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [isGeneratingShareUrl, setIsGeneratingShareUrl] = useState(false);
     const [shareProgressStep, setShareProgressStep] = useState(0);
     const [shareUrl, setShareUrl] = useState('');
     const [shareError, setShareError] = useState('');
+
+    const { error: themeZipError, sizeLabel: themeZipSizeLabel } =
+        useThemeZipSizeGuard(themeZip);
 
     useEffect(() => {
         if (!isGeneratingShareUrl) {
@@ -142,16 +150,20 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
         }
 
         setIsImportingUrl(true);
-        router.post(themesRoutes.store.url(), { theme_url: value }, {
-            onSuccess: () => router.flushAll(),
-            onFinish: () => setIsImportingUrl(false),
-        });
+        router.post(
+            themesRoutes.store.url(),
+            { theme_url: value },
+            {
+                onSuccess: () => router.flushAll(),
+                onFinish: () => setIsImportingUrl(false),
+            },
+        );
     };
 
     const handleUpload = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
-        if (!themeZip) {
+        if (!themeZip || themeZipError) {
             return;
         }
 
@@ -170,19 +182,27 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
     const handleQuickImport = (theme: Theme) => {
         setImportingThemeSlug(theme.slug);
 
-        router.post(themesRoutes.store.url(), { theme_url: theme.downloadUrl }, {
-            onSuccess: () => router.flushAll(),
-            onFinish: () => setImportingThemeSlug(null),
-        });
+        router.post(
+            themesRoutes.store.url(),
+            { theme_url: theme.downloadUrl },
+            {
+                onSuccess: () => router.flushAll(),
+                onFinish: () => setImportingThemeSlug(null),
+            },
+        );
     };
 
     const handleSubmitToOfficialThemes = (theme: Theme) => {
         setSubmittingThemeSlug(theme.slug);
 
-        router.post(`/ticker-admin/themes/${theme.slug}/submit`, {}, {
-            onSuccess: () => router.flushAll(),
-            onFinish: () => setSubmittingThemeSlug(null),
-        });
+        router.post(
+            `/ticker-admin/themes/${theme.slug}/submit`,
+            {},
+            {
+                onSuccess: () => router.flushAll(),
+                onFinish: () => setSubmittingThemeSlug(null),
+            },
+        );
     };
 
     const handleDelete = (theme: Theme) => {
@@ -208,7 +228,9 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
         const csrfToken =
             typeof document === 'undefined'
                 ? ''
-                : document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '';
+                : (document.querySelector<HTMLMetaElement>(
+                      'meta[name="csrf-token"]',
+                  )?.content ?? '');
 
         try {
             const response = await fetch(themeShareRoutes.url.url(theme.slug), {
@@ -227,7 +249,7 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                 throw new Error('Unable to generate the share URL.');
             }
 
-            const data = await response.json() as { share_url?: string };
+            const data = (await response.json()) as { share_url?: string };
             setShareUrl(data.share_url ?? '');
             setShareProgressStep(shareProgressKeys.length - 1);
         } catch {
@@ -266,18 +288,22 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
                                                         <Link
-                                                            href={themesRoutes.show.url(theme.slug)}
+                                                            href={themesRoutes.show.url(
+                                                                theme.slug,
+                                                            )}
                                                             className="truncate font-medium text-foreground transition-colors hover:text-primary"
                                                         >
                                                             {theme.label}
                                                         </Link>
                                                         <p className="truncate text-xs text-muted-foreground">
                                                             {theme.slug}
-                                                            </p>
-                                                        </div>
+                                                        </p>
+                                                    </div>
                                                     <div className="flex shrink-0 items-center gap-2">
                                                         <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
+                                                            <DropdownMenuTrigger
+                                                                asChild
+                                                            >
                                                                 <Button
                                                                     type="button"
                                                                     variant="outline"
@@ -285,41 +311,74 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                                     className="gap-1.5 px-3"
                                                                 >
                                                                     <Share2 />
-                                                                    {t('shareTheme')}
+                                                                    {t(
+                                                                        'shareTheme',
+                                                                    )}
                                                                     <ChevronDown />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-52">
+                                                            <DropdownMenuContent
+                                                                align="end"
+                                                                className="w-52"
+                                                            >
                                                                 <DropdownMenuLabel>
-                                                                    {t('shareTheme')}
+                                                                    {t(
+                                                                        'shareTheme',
+                                                                    )}
                                                                 </DropdownMenuLabel>
                                                                 <DropdownMenuSeparator />
-                                                                <DropdownMenuItem asChild>
-                                                                    <a href={theme.downloadUrl}>
+                                                                <DropdownMenuItem
+                                                                    asChild
+                                                                >
+                                                                    <a
+                                                                        href={
+                                                                            theme.downloadUrl
+                                                                        }
+                                                                    >
                                                                         <Download />
-                                                                        <span>{t('downloadThemeZip')}</span>
+                                                                        <span>
+                                                                            {t(
+                                                                                'downloadThemeZip',
+                                                                            )}
+                                                                        </span>
                                                                     </a>
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem
-                                                                    onSelect={(event) => {
+                                                                    onSelect={(
+                                                                        event,
+                                                                    ) => {
                                                                         event.preventDefault();
-                                                                        void handleShareUrl(theme);
+                                                                        void handleShareUrl(
+                                                                            theme,
+                                                                        );
                                                                     }}
                                                                 >
                                                                     <Link2 />
-                                                                    <span>{t('shareThemeUrl')}</span>
+                                                                    <span>
+                                                                        {t(
+                                                                            'shareThemeUrl',
+                                                                        )}
+                                                                    </span>
                                                                 </DropdownMenuItem>
                                                                 {canManageThemes ? (
                                                                     <>
                                                                         <DropdownMenuSeparator />
                                                                         <DropdownMenuItem
-                                                                            onSelect={(event) => {
+                                                                            onSelect={(
+                                                                                event,
+                                                                            ) => {
                                                                                 event.preventDefault();
-                                                                                handleQuickImport(theme);
+                                                                                handleQuickImport(
+                                                                                    theme,
+                                                                                );
                                                                             }}
                                                                         >
                                                                             <Plus />
-                                                                            <span>{t('importThemeNow')}</span>
+                                                                            <span>
+                                                                                {t(
+                                                                                    'importThemeNow',
+                                                                                )}
+                                                                            </span>
                                                                         </DropdownMenuItem>
                                                                     </>
                                                                 ) : null}
@@ -330,11 +389,17 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                                 type="button"
                                                                 size="icon"
                                                                 variant="outline"
-                                                                onClick={() => handleDelete(theme)}
+                                                                onClick={() =>
+                                                                    handleDelete(
+                                                                        theme,
+                                                                    )
+                                                                }
                                                             >
                                                                 <Trash2 />
                                                                 <span className="sr-only">
-                                                                    {t('deleteTheme')}
+                                                                    {t(
+                                                                        'deleteTheme',
+                                                                    )}
                                                                 </span>
                                                             </Button>
                                                         ) : null}
@@ -349,63 +414,87 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                             {theme.author}
                                                         </span>
                                                     ) : (
-                                                        <span className="text-sm text-muted-foreground">-</span>
+                                                        <span className="text-sm text-muted-foreground">
+                                                            -
+                                                        </span>
                                                     )}
                                                     {theme.submissionStatus ? (
                                                         <Badge
                                                             variant={
-                                                                theme.submissionStatus === 'approved'
+                                                                theme.submissionStatus ===
+                                                                'approved'
                                                                     ? 'secondary'
-                                                                    : theme.submissionStatus === 'pending'
-                                                                        ? 'outline'
-                                                                        : 'destructive'
+                                                                    : theme.submissionStatus ===
+                                                                        'pending'
+                                                                      ? 'outline'
+                                                                      : 'destructive'
                                                             }
                                                             title={
-                                                                theme.submissionStatus === 'rejected'
-                                                                    ? theme.submissionRejectionReason ?? undefined
+                                                                theme.submissionStatus ===
+                                                                'rejected'
+                                                                    ? (theme.submissionRejectionReason ??
+                                                                      undefined)
                                                                     : undefined
                                                             }
-                                                            className={
-                                                                [
-                                                                    'rounded-full px-3 py-1',
-                                                                    theme.submissionStatus === 'pending'
-                                                                        ? 'border-border bg-muted text-muted-foreground'
-                                                                        : '',
-                                                                    theme.submissionStatus === 'approved'
-                                                                        ? 'border-transparent bg-emerald-500/15 text-emerald-500'
-                                                                        : '',
-                                                                    theme.submissionStatus === 'rejected'
-                                                                        ? 'cursor-help'
-                                                                        : '',
-                                                                ].join(' ')
-                                                            }
+                                                            className={[
+                                                                'rounded-full px-3 py-1',
+                                                                theme.submissionStatus ===
+                                                                'pending'
+                                                                    ? 'border-border bg-muted text-muted-foreground'
+                                                                    : '',
+                                                                theme.submissionStatus ===
+                                                                'approved'
+                                                                    ? 'border-transparent bg-emerald-500/15 text-emerald-500'
+                                                                    : '',
+                                                                theme.submissionStatus ===
+                                                                'rejected'
+                                                                    ? 'cursor-help'
+                                                                    : '',
+                                                            ].join(' ')}
                                                         >
-                                                            {theme.submissionStatus === 'pending'
+                                                            {theme.submissionStatus ===
+                                                            'pending'
                                                                 ? `${t('pending')}...`
                                                                 : t(
-                                                                    theme.submissionStatus === 'rejected'
-                                                                        ? 'denied'
-                                                                        : 'approved',
-                                                                )}
+                                                                      theme.submissionStatus ===
+                                                                          'rejected'
+                                                                          ? 'denied'
+                                                                          : 'approved',
+                                                                  )}
                                                         </Badge>
-                                                    ) : canManageThemes && features.themeOfficialCatalogSubmissionEnabled ? (
+                                                    ) : canManageThemes &&
+                                                      features.themeOfficialCatalogSubmissionEnabled ? (
                                                         <Button
                                                             type="button"
                                                             variant="secondary"
                                                             size="sm"
-                                                            onClick={() => handleSubmitToOfficialThemes(theme)}
-                                                            disabled={submittingThemeSlug === theme.slug}
+                                                            onClick={() =>
+                                                                handleSubmitToOfficialThemes(
+                                                                    theme,
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                submittingThemeSlug ===
+                                                                theme.slug
+                                                            }
                                                             className="shrink-0 rounded-full"
                                                         >
                                                             <Upload />
-                                                            {submittingThemeSlug === theme.slug
+                                                            {submittingThemeSlug ===
+                                                            theme.slug
                                                                 ? `${t('submitToOfficialThemes')}...`
-                                                                : t('submitToOfficialThemes')}
+                                                                : t(
+                                                                      'submitToOfficialThemes',
+                                                                  )}
                                                         </Button>
                                                     ) : null}
-                                                    {importingThemeSlug === theme.slug ? (
+                                                    {importingThemeSlug ===
+                                                    theme.slug ? (
                                                         <Badge variant="outline">
-                                                            {t('importThemeNow')}...
+                                                            {t(
+                                                                'importThemeNow',
+                                                            )}
+                                                            ...
                                                         </Badge>
                                                     ) : null}
                                                 </div>
@@ -416,43 +505,89 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                     {themes.meta.last_page > 1 ? (
                                         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm">
                                             <p className="text-muted-foreground">
-                                                {themes.meta.from !== null && themes.meta.to !== null ? (
+                                                {themes.meta.from !== null &&
+                                                themes.meta.to !== null ? (
                                                     <>
-                                                        {themes.meta.from} - {themes.meta.to} / {themes.meta.total}
+                                                        {themes.meta.from} -{' '}
+                                                        {themes.meta.to} /{' '}
+                                                        {themes.meta.total}
                                                     </>
                                                 ) : (
                                                     <>{themes.meta.total}</>
                                                 )}
                                             </p>
                                             <div className="flex items-center gap-2">
-                                                {themes.meta.prev_page_url !== null ? (
-                                                    <Button type="button" variant="outline" size="sm" asChild>
+                                                {themes.meta.prev_page_url !==
+                                                null ? (
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        asChild
+                                                    >
                                                         <Link
-                                                            href={themesRoutes.index.url({ query: { page: themes.meta.current_page - 1 } })}
+                                                            href={themesRoutes.index.url(
+                                                                {
+                                                                    query: {
+                                                                        page:
+                                                                            themes
+                                                                                .meta
+                                                                                .current_page -
+                                                                            1,
+                                                                    },
+                                                                },
+                                                            )}
                                                             preserveScroll
                                                         >
                                                             {t('previous')}
                                                         </Link>
                                                     </Button>
                                                 ) : (
-                                                    <Button type="button" variant="outline" size="sm" disabled>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled
+                                                    >
                                                         {t('previous')}
                                                     </Button>
                                                 )}
                                                 <span className="min-w-20 text-center text-muted-foreground">
-                                                    {themes.meta.current_page} / {themes.meta.last_page}
+                                                    {themes.meta.current_page} /{' '}
+                                                    {themes.meta.last_page}
                                                 </span>
-                                                {themes.meta.next_page_url !== null ? (
-                                                    <Button type="button" variant="outline" size="sm" asChild>
+                                                {themes.meta.next_page_url !==
+                                                null ? (
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        asChild
+                                                    >
                                                         <Link
-                                                            href={themesRoutes.index.url({ query: { page: themes.meta.current_page + 1 } })}
+                                                            href={themesRoutes.index.url(
+                                                                {
+                                                                    query: {
+                                                                        page:
+                                                                            themes
+                                                                                .meta
+                                                                                .current_page +
+                                                                            1,
+                                                                    },
+                                                                },
+                                                            )}
                                                             preserveScroll
                                                         >
                                                             {t('next')}
                                                         </Link>
                                                     </Button>
                                                 ) : (
-                                                    <Button type="button" variant="outline" size="sm" disabled>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled
+                                                    >
                                                         {t('next')}
                                                     </Button>
                                                 )}
@@ -478,7 +613,11 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                     </p>
                                 </div>
                                 <Button asChild variant="outline">
-                                    <a href={themeCatalogUrl ?? '#'} target="_blank" rel="noreferrer">
+                                    <a
+                                        href={themeCatalogUrl ?? '#'}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
                                         {t('openOfficialThemesCatalog')}
                                     </a>
                                 </Button>
@@ -495,7 +634,10 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-6">
-                                <form onSubmit={handleUrlImport} className="space-y-4">
+                                <form
+                                    onSubmit={handleUrlImport}
+                                    className="space-y-4"
+                                >
                                     <div>
                                         <Label htmlFor="theme_url">
                                             {t('themeImportUrl')}
@@ -506,7 +648,9 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                             type="url"
                                             value={themeImportUrl}
                                             onChange={(event) =>
-                                                setThemeImportUrl(event.target.value)
+                                                setThemeImportUrl(
+                                                    event.target.value,
+                                                )
                                             }
                                             placeholder="https://example.com/scoreboard.zip"
                                             className="mt-1"
@@ -519,7 +663,10 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                     <Button
                                         type="submit"
                                         variant="outline"
-                                        disabled={isImportingUrl || themeImportUrl.trim() === ''}
+                                        disabled={
+                                            isImportingUrl ||
+                                            themeImportUrl.trim() === ''
+                                        }
                                     >
                                         <Link2 />
                                         {t('importThemeFromUrl')}
@@ -527,7 +674,10 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                 </form>
 
                                 <div className="border-t pt-4">
-                                    <form onSubmit={handleUpload} className="space-y-4">
+                                    <form
+                                        onSubmit={handleUpload}
+                                        className="space-y-4"
+                                    >
                                         <div>
                                             <Label htmlFor="theme_zip">
                                                 {t('themeZip')}
@@ -539,28 +689,38 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                                 accept=".zip,application/zip"
                                                 onChange={(event) =>
                                                     setThemeZip(
-                                                        event.target.files?.[0] ??
-                                                            null,
+                                                        event.target
+                                                            .files?.[0] ?? null,
                                                     )
                                                 }
                                                 className="mt-1"
                                             />
                                             <InputError
                                                 className="mt-2"
-                                                message={errors.theme_zip}
+                                                message={
+                                                    themeZipError ??
+                                                    errors.theme_zip
+                                                }
                                             />
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2">
                                             <Button
                                                 type="submit"
-                                                disabled={isUploading || !themeZip}
+                                                disabled={
+                                                    isUploading ||
+                                                    !themeZip ||
+                                                    themeZipError !== null
+                                                }
                                             >
                                                 <Upload />
                                                 {t('uploadThemeZip')}
                                             </Button>
                                             {themeZip ? (
-                                                <span className="text-sm text-muted-foreground">
-                                                    {themeZip.name}
+                                                <span
+                                                    className={`text-sm ${themeZipError ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}
+                                                >
+                                                    {themeZip.name}{' '}
+                                                    {themeZipSizeLabel}
                                                 </span>
                                             ) : null}
                                         </div>
@@ -596,7 +756,9 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                     <DialogHeader>
                         <DialogTitle>{t('shareUrlDialogTitle')}</DialogTitle>
                         <DialogDescription>
-                            {shareTheme ? shareTheme.label : t('shareUrlDialogDescription')}
+                            {shareTheme
+                                ? shareTheme.label
+                                : t('shareUrlDialogDescription')}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -619,7 +781,10 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                     className="h-full rounded-full bg-primary transition-all duration-500"
                                     style={{
                                         width: `${Math.round(
-                                            (shareProgressStep / (shareProgressKeys.length - 1)) * 100,
+                                            (shareProgressStep /
+                                                (shareProgressKeys.length -
+                                                    1)) *
+                                                100,
                                         )}%`,
                                     }}
                                 />
@@ -629,7 +794,9 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                         {shareError ? (
                             <Alert>
                                 <AlertTitle>{t('shareUrlFailed')}</AlertTitle>
-                                <AlertDescription>{shareError}</AlertDescription>
+                                <AlertDescription>
+                                    {shareError}
+                                </AlertDescription>
                             </Alert>
                         ) : null}
 
@@ -648,7 +815,11 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                                         type="button"
                                         size="icon"
                                         variant="outline"
-                                        onClick={async () => navigator.clipboard.writeText(shareUrl)}
+                                        onClick={async () =>
+                                            navigator.clipboard.writeText(
+                                                shareUrl,
+                                            )
+                                        }
                                     >
                                         <Copy />
                                         <span className="sr-only">
@@ -661,7 +832,11 @@ export default function TickerThemes({ themes, createThemeUrl }: Props) {
                     </div>
 
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setIsShareModalOpen(false)}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsShareModalOpen(false)}
+                        >
                             {t('done')}
                         </Button>
                     </DialogFooter>

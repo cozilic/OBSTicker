@@ -53,25 +53,40 @@ type Props = {
 
 export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Props) {
     const { t } = useTranslation();
-    const { canModerateThemes, features } = usePage<{
+    const { canModerateThemes, features, errors } = usePage<{
         canModerateThemes: boolean;
         features: { themeOfficialCatalogEnabled: boolean };
     }>().props;
     const canModerateOfficialThemes = canModerateThemes && features.themeOfficialCatalogEnabled;
+    const submissionError = (errors as { submission?: string } | undefined)?.submission;
 
     const handleApprove = (submission: Submission) => {
         router.post(`/ticker-admin/theme-submissions/${submission.id}/approve`, {}, {
             onSuccess: () => router.flushAll(),
+            onError: (errors) => {
+                if (errors.submission) {
+                    alert(errors.submission);
+                }
+            },
         });
     };
 
     const handleReject = (submission: Submission) => {
         const reason = window.prompt(t('rejectionReasonPrompt'));
 
+        if (reason === null) {
+            return;
+        }
+
         router.post(`/ticker-admin/theme-submissions/${submission.id}/reject`, {
-            rejection_reason: reason ?? '',
+            rejection_reason: reason,
         }, {
             onSuccess: () => router.flushAll(),
+            onError: (errors) => {
+                if (errors.submission) {
+                    alert(errors.submission);
+                }
+            },
         });
     };
 
@@ -86,6 +101,11 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
 
         router.delete(`/ticker-admin/theme-submissions/${submission.id}`, {
             onSuccess: () => router.flushAll(),
+            onError: (errors) => {
+                if (errors.submission) {
+                    alert(errors.submission);
+                }
+            },
         });
     };
 
@@ -109,6 +129,12 @@ export default function ThemeSubmissions({ submissions, officialCatalogUrl }: Pr
                         </a>
                     </Button>
                 </div>
+
+                {submissionError ? (
+                    <div className="rounded-md border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-400">
+                        {submissionError}
+                    </div>
+                ) : null}
 
                 {!features.themeOfficialCatalogEnabled ? (
                     <Card className="rounded-lg">

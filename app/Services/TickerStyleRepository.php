@@ -15,7 +15,7 @@ class TickerStyleRepository
 
     public const COMPILED_DIRECTORY = 'ticker-styles/compiled';
 
-    public function __construct(private ThemeImageStitcher $themeImageStitcher) {}
+    public function __construct(private ThemeImageSlicer $themeImageSlicer) {}
 
     /**
      * @return list<array{value: string, label: string, url: string}>
@@ -167,11 +167,30 @@ class TickerStyleRepository
      */
     public function importThemeUrl(string $url): array
     {
-        $response = Http::timeout(15)->get($url);
-        if (! $response->successful()) {
-            throw new \RuntimeException('The theme URL could not be downloaded.');
-        }
+        $fetched = $this->fetchThemeArchiveFromUrl($url);
 
+        try {
+            return $this->importThemeArchive(
+                $fetched['archivePath'],
+                basename((string) (parse_url($url, PHP_URL_PATH) ?: 'theme.zip')),
+            );
+        } finally {
+            File::delete($fetched['archivePath']);
+        }
+    }
+
+    /**
+     * Stream a theme archive from a URL to a temporary file and pull its
+     * metadata, without ever extracting PNG/JSON assets onto the filesystem.
+     * Lets callers decide what to do with the archive (e.g. queue it for
+     * moderation instead of publishing it locally).
+     *
+     * Same-host share URLs bypass HTTP entirely via {@see resolveLocalSharePath}.
+     *
+     * @return array{archivePath: string, slug: string, label: string, author: string|null}
+     */
+    public function fetchThemeArchiveFromUrl(string $url): array
+    {
         $tempPath = tempnam(sys_get_temp_dir(), 'theme-import-');
         if ($tempPath === false) {
             throw new \RuntimeException('Unable to create a temporary download file.');
@@ -179,16 +198,142 @@ class TickerStyleRepository
 
         $archivePath = $tempPath.'.zip';
         File::delete($tempPath);
-        File::put($archivePath, $response->body());
+
+        // Bypass HTTP when the URL is a share file on this same host.
+        $localSharePath = $this->resolveLocalSharePath($url);
+        if ($localSharePath !== null) {
+            File::copy($localSharePath, $archivePath);
+        } else {
+            try {
+                $response = Http::connectTimeout(10)
+                    ->timeout(120)
+                    ->retry(3, 2000)
+                    ->sink($archivePath)
+                    ->get($url);
+            } catch (\Throwable $exception) {
+                @unlink($archivePath);
+
+                throw new \RuntimeException('The theme URL could not be downloaded (network error or timeout).');
+            }
+
+            if (! $response->successful()) {
+                @unlink($archivePath);
+
+                throw new \RuntimeException('The theme URL could not be downloaded (HTTP '.$response->status().').');
+            }
+        }
+
+        return [
+            'archivePath' => $archivePath,
+            ...$this->readThemeArchiveMetadata($archivePath),
+        ];
+    }
+
+    /**
+     * Read the metadata (slug, label, author) of a theme archive without
+     * extracting any of its image assets. Throws when the archive is missing
+     * or malformed so the caller can surface a friendly validation error.
+     *
+     * @return array{slug: string, label: string, author: string|null}
+     */
+    public function readThemeArchiveMetadata(string $absolutePath): array
+    {
+        if (! is_file($absolutePath)) {
+            throw new \RuntimeException('The theme archive could not be opened.');
+        }
+
+        $zip = new ZipArchive;
+        if ($zip->open($absolutePath) !== true) {
+            throw new \RuntimeException('The theme archive must be a valid .zip file.');
+        }
 
         try {
-            return $this->importThemeArchive(
-                $archivePath,
-                basename((string) (parse_url($url, PHP_URL_PATH) ?: 'theme.zip')),
+            $jsonEntry = $this->findZipJsonEntry($zip);
+            if (! $jsonEntry) {
+                throw new \RuntimeException('The archive is missing the theme JSON file.');
+            }
+
+            $themeData = json_decode($this->zipEntryContents($zip, $jsonEntry), true);
+            if (! is_array($themeData)) {
+                throw new \RuntimeException('The theme JSON file must contain valid JSON.');
+            }
+
+            $fallbackName = pathinfo(basename(str_replace('\\', '/', $jsonEntry)), PATHINFO_FILENAME);
+            $themeSlug = $this->normalizeThemeSlug(
+                $themeData['theme_name'] ?? $fallbackName,
             );
+            if ($themeSlug === '') {
+                throw new \RuntimeException('The JSON file name or theme_name value must contain a valid theme name.');
+            }
+
+            $author = isset($themeData['author']) && is_string($themeData['author']) && trim($themeData['author']) !== ''
+                ? trim($themeData['author'])
+                : null;
+            $label = isset($themeData['name']) && is_string($themeData['name']) && trim((string) $themeData['name']) !== ''
+                ? trim((string) $themeData['name'])
+                : $this->themeLabelFromSlug($themeSlug);
+
+            return [
+                'slug' => $themeSlug,
+                'label' => $label,
+                'author' => $author,
+            ];
         } finally {
-            File::delete($archivePath);
+            $zip->close();
         }
+    }
+
+    /**
+     * Decide whether the theme URL points at a share file we can read directly
+     * from disk (avoids a server-to-self HTTP roundtrip). Returns the absolute
+     * storage path when the file is on the same host and matches the public
+     * share endpoint; throws a RuntimeException for any other same-host URL;
+     * returns null when the URL is on a different host so the caller can fall
+     * back to an HTTP download.
+     */
+    private function resolveLocalSharePath(string $url): ?string
+    {
+        $expectedHost = $this->resolveExpectedHost();
+        if ($expectedHost === '') {
+            return null;
+        }
+
+        $urlHost = parse_url($url, PHP_URL_HOST);
+        if (! is_string($urlHost)) {
+            return null;
+        }
+
+        if (strcasecmp($urlHost, $expectedHost) !== 0) {
+            return null;
+        }
+
+        $urlPath = parse_url($url, PHP_URL_PATH);
+        if (! is_string($urlPath) || preg_match(
+            '#^/themeshare/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$#',
+            $urlPath,
+            $matches,
+        ) !== 1) {
+            throw new \RuntimeException('Only public share URLs from this host are allowed.');
+        }
+
+        $localPath = storage_path('app/private/theme-shares/'.$matches[1].'.zip');
+        if (! is_file($localPath)) {
+            throw new \RuntimeException('The share file is no longer available.');
+        }
+
+        return $localPath;
+    }
+
+    private function resolveExpectedHost(): string
+    {
+        $host = request()->getHost();
+        if ($host !== '') {
+            return $host;
+        }
+
+        $appUrlHost = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+        return is_string($appUrlHost) ? $appUrlHost : '';
     }
 
     public function createThemeZip(string $slug): string
@@ -237,7 +382,10 @@ class TickerStyleRepository
         return $archivePath;
     }
 
-    public function createShareZip(string $slug): string
+    /**
+     * @return array{id: string, path: string, filename: string}
+     */
+    public function createShareZip(string $slug): array
     {
         $themeSlug = $this->normalizeThemeSlug($slug);
         if ($themeSlug === '') {
@@ -245,29 +393,19 @@ class TickerStyleRepository
         }
 
         $archivePath = $this->createThemeZip($themeSlug);
-        $shareDirectory = public_path('ticker-theme-shares');
+        $shareDirectory = storage_path('app/private/theme-shares');
         File::ensureDirectoryExists($shareDirectory);
 
-        $sharePath = $shareDirectory.'/'.$themeSlug.'.zip';
+        $shareId = (string) Str::uuid();
+        $sharePath = $shareDirectory.'/'.$shareId.'.zip';
         File::copy($archivePath, $sharePath);
         File::delete($archivePath);
 
-        return $sharePath;
-    }
-
-    public function shareZipUrl(string $slug): ?string
-    {
-        $themeSlug = $this->normalizeThemeSlug($slug);
-        if ($themeSlug === '') {
-            return null;
-        }
-
-        $sharePath = public_path('ticker-theme-shares/'.$themeSlug.'.zip');
-        if (! is_file($sharePath)) {
-            return null;
-        }
-
-        return '/ticker-theme-shares/'.rawurlencode($themeSlug.'.zip');
+        return [
+            'id' => $shareId,
+            'path' => $sharePath,
+            'filename' => $themeSlug.'.zip',
+        ];
     }
 
     /**
@@ -357,7 +495,6 @@ class TickerStyleRepository
         File::delete($this->compiledThemePngPath($themeSlug));
         File::delete($this->compiledThemeJsonPath($themeSlug));
         File::deleteDirectory($this->themeDirectory($themeSlug));
-        File::delete(public_path('ticker-theme-shares/'.$themeSlug.'.zip'));
         $this->deleteLegacyCompiledFiles($themeSlug);
     }
 
@@ -407,7 +544,113 @@ class TickerStyleRepository
 
                 if ($needsCompile) {
                     try {
-                        $this->themeImageStitcher->stitch($titleFile, $contentFile, $endFile, $outputPng, $outputJson, $themeJson);
+                        // The committed theme's meta.json records the user's
+                        // originally-chosen split percentages. The first-pass
+                        // commit flow persists UN-trimmed cut-region PNGs
+                        // (designer-baked transparent gutters/fades inside
+                        // each cut are intentional space, preserved by
+                        // CONTAIN-fit + asymmetric anchoring), so the
+                        // recompile slot math MUST use those percentages;
+                        // otherwise imagesx() returns the cut-region
+                        // dimensions including transparent padding and the
+                        // slot boundaries sit on transparent canvas.
+                        $themeMeta = json_decode((string) file_get_contents($themeJson), true);
+                        if (! is_array($themeMeta)) {
+                            $themeMeta = [];
+                        }
+
+                        $splitPercentages = null;
+                        $augmented = false;
+
+                        if (isset($themeMeta['split_1'], $themeMeta['split_2'])
+                            && is_numeric($themeMeta['split_1'])
+                            && is_numeric($themeMeta['split_2'])) {
+                            $splitPercentages = [
+                                (float) $themeMeta['split_1'],
+                                (float) $themeMeta['split_2'],
+                            ];
+                        } else {
+                            // WYCIWYG: if a legacy theme's meta.json lacks the
+                            // split percentages, derive them from the actual
+                            // pixel widths of the title/content/end PNGs so
+                            // the live ticker's CSS-percent layout matches
+                            // the compiled PNG's geometric boundaries
+                            // exactly. The derived splits are written into
+                            // the compiled meta copy so subsequent
+                            // recompiles read them back as recorded-splits
+                            // and skip the derivation step.
+                            $derived = $this->deriveSplitsFromCutImages(
+                                $titleFile,
+                                $contentFile,
+                                $endFile,
+                            );
+                            if ($derived !== null) {
+                                $themeMeta['split_1'] = $derived[0];
+                                $themeMeta['split_2'] = $derived[1];
+                                $themeMeta['top_pct'] ??= 0.0;
+                                $themeMeta['bottom_pct'] ??= 100.0;
+                                $themeMeta['left_pct'] = 0.0;
+                                $themeMeta['right_pct'] = 100.0;
+                                $splitPercentages = $derived;
+                                $augmented = true;
+                            }
+                        }
+
+                        $sliceMetrics = $this->themeImageSlicer->slice(
+                            $titleFile,
+                            $contentFile,
+                            $endFile,
+                            null,
+                            null,
+                            $outputPng,
+                            null,
+                            null,
+                            $splitPercentages,
+                        );
+
+                        // Persist the visible-stamp metrics the slicer
+                        // computed so the live ticker can read them from
+                        // meta.json and place its label overlay exactly
+                        // on the visible stamp area (post-CONTAIN-fit +
+                        // asymmetric anchoring). Without these, the live
+                        // renderer falls back to the source slot
+                        // boundaries ([left_pct, split_1]) which describe
+                        // the SLOT, not the STAMP — and any title art
+                        // whose aspect ratio differs from the slot
+                        // renders its label over transparent padding
+                        // rather than over the actual visible image.
+                        $persistedMetrics = is_array($sliceMetrics)
+                            ? array_intersect_key(
+                                $sliceMetrics,
+                                array_flip([
+                                    'title_stamp_left_pct',
+                                    'title_stamp_width_pct',
+                                    'end_stamp_left_pct',
+                                    'end_stamp_width_pct',
+                                ]),
+                            )
+                            : [];
+
+                        if ($persistedMetrics !== []) {
+                            // Metric keys win on conflict so a recompile
+                            // that re-reads an older meta.json still
+                            // refreshes the visible-stamp geometry.
+                            $themeMeta = array_merge($themeMeta, $persistedMetrics);
+                        }
+
+                        // Always emit the merged JSON on every recompile
+                        // so legacy meta.json files migrated through this
+                        // path pick up the new metrics without waiting for
+                        // a user re-export. The augmented flag still
+                        // controls whether the source meta's split fields
+                        // were filled in by deriveSplitsFromCutImages;
+                        // either way the file we write is the merged
+                        // view, not a verbatim copy.
+                        File::put(
+                            $outputJson,
+                            (string) json_encode($themeMeta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
+                        );
+
                         $this->deleteLegacyCompiledFiles($item);
                     } catch (\Throwable $exception) {
                         report($exception);
@@ -428,6 +671,49 @@ class TickerStyleRepository
         }
 
         return null;
+    }
+
+    /**
+     * Derive split_1 / split_2 percentages for a legacy theme whose
+     * meta.json was written before the build flow started recording
+     * them. Reads the actual pixel widths of the title, content and
+     * end cut-images via getimagesize() (cheap, no GD decode) and
+     * returns [split_1, split_2] as floating-point percentages of
+     * the total source width, suitable for use as the
+     * `$splitPercentages` argument of
+     * {@see ThemeImageSlicer::slice()} and for persistence to the
+     * compiled meta.json.
+     *
+     * WYCIWYG: this guarantees the live ticker's CSS-percent slots
+     * match the compiled PNG's exact geometric boundaries when no
+     * user-recorded splits are available, eliminating the previous
+     * hardcoded 13%/5% fallback in the renderer.
+     *
+     * @return array{0: float, 1: float}|null
+     */
+    private function deriveSplitsFromCutImages(
+        string $titlePath,
+        string $contentPath,
+        string $endPath,
+    ): ?array {
+        $titleSize = @getimagesize($titlePath);
+        $contentSize = @getimagesize($contentPath);
+        $endSize = @getimagesize($endPath);
+
+        if ($titleSize === false || $contentSize === false || $endSize === false) {
+            return null;
+        }
+
+        $titleWidth = max(1, (int) $titleSize[0]);
+        $contentWidth = max(1, (int) $contentSize[0]);
+        $endWidth = max(1, (int) $endSize[0]);
+        // Each width is clamped to >=1 above so $total is always >=3,
+        // which makes the percentage computation safe.
+        $total = $titleWidth + $contentWidth + $endWidth;
+        $split1 = round(($titleWidth / $total) * 100, 4);
+        $split2 = round($split1 + ($contentWidth / $total) * 100, 4);
+
+        return [(float) $split1, (float) $split2];
     }
 
     public function exists(string $filename): bool
