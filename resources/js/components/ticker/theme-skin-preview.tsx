@@ -16,6 +16,22 @@ type ThemeSkinPreviewProps = {
     cycleMs?: number;
     className?: string;
     onMetaLoaded?: (meta: ThemeMeta | null) => void;
+    /**
+     * Render the preview as just the lower-third ticker strip instead
+     * of the full 16:9 canvas. Used on the admin theme-preview page
+     * where the empty 94% above the strip adds nothing — the user
+     * wants to verify "does this theme look right on air", not "does
+     * this PNG look right as a thumbnail". The HUD overlay (LIVE
+     * PREVIEW badge + playback controls + dot indicator) is hidden in
+     * compact mode because there's no canvas above the strip to put
+     * it on. The container's aspect is the strip's natural aspect
+     * (~30:1 for a 16:9 canvas, ~22:1 for 4:3) so the WHOLE strip
+     * fills the box — title stamp + content slot + end stamp are all
+     * visible at their natural width. The compiled PNG is scaled to
+     * fit the container's width and anchored to the bottom so the
+     * strip area (the bottom 6% of the PNG) is what you see.
+     */
+    compact?: boolean;
 };
 
 export type ThemeMeta = {
@@ -160,11 +176,21 @@ export default function ThemeSkinPreview({
     cycleMs = 7000,
     className,
     onMetaLoaded,
+    compact = false,
 }: ThemeSkinPreviewProps) {
     const [themeMeta, setThemeMeta] = useState<ThemeMeta | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
     const [viewportScale, setViewportScale] = useState(1);
+    // The strip's natural aspect (width / height) is computed from
+    // the real PNG in the useEffect below. `null` means "not yet
+    // measured" — the container falls back to `aspect-[30/1]` (a
+    // safe 16:9 default) for the first frame so there's no flash of
+    // an empty container while the probe is in flight. Once
+    // measured, the inline `aspectRatio` style overrides the
+    // className and the strip frames edge-to-edge regardless of the
+    // theme's canvas aspect (16:9, 4:3, 21:9, etc.).
+    const [compactAspect, setCompactAspect] = useState<number | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
 
     const resolvedMetaUrl = useMemo(() => {
@@ -303,6 +329,47 @@ export default function ThemeSkinPreview({
         };
     }, [items.length, cycleMs, isPaused]);
 
+    // Measure the source PNG so the compact container's aspect ratio
+    // matches the strip's natural aspect. Loading the image into a
+    // throwaway <img> is cheap (browser-decoded only, never inserted
+    // into the DOM) and lets us adapt to any canvas aspect (16:9,
+    // 4:3, 21:9) without hardcoding. The strip is the bottom 6% of
+    // the canvas height, so its aspect = naturalWidth /
+    // (naturalHeight * 0.06). Only runs in compact mode — in the
+    // full-canvas 16:9 mode the aspect-video className is enough.
+    // Starts at `null` so the first render falls back to the
+    // `aspect-[30/1]` className (a safe 16:9 default) and avoids a
+    // flash of an empty container while the probe is in flight.
+    useEffect(() => {
+        if (!compact || typeof imageUrl !== 'string' || imageUrl === '') {
+            return;
+        }
+
+        const probe = new Image();
+        probe.onload = () => {
+            if (probe.naturalHeight > 0) {
+                setCompactAspect(
+                    probe.naturalWidth / (probe.naturalHeight * 0.06),
+                );
+            }
+        };
+        probe.onerror = () => {
+            // Keep the default aspect; the container will use the
+            // aspect-[30/1] className fallback for the rest of its
+            // life if the PNG never resolves.
+        };
+        probe.src = imageUrl;
+
+        return (): void => {
+            probe.onload = null;
+            probe.onerror = null;
+            // Abort any pending decode so the in-flight request
+            // doesn't resolve against a dead component after the
+            // effect's dependencies change.
+            probe.src = '';
+        };
+    }, [imageUrl, compact]);
+
     // Track viewport-relative scale so the headline + ticker text fit
     // proportionally inside the responsive container. The math is the
     // same shape as ticker/show.tsx's viewportScale clamp, without
@@ -351,6 +418,28 @@ export default function ThemeSkinPreview({
         backgroundPosition: 'center 52%',
         height: '6%',
     };
+
+    // Compact mode: the entire preview IS the strip. Scale the
+    // compiled PNG to fit the container's width (100% auto) and
+    // anchor it to the bottom of the container (center bottom) so
+    // the bottom 6% of the PNG — the strip area — is what fills the
+    // box. The container's aspect is set via inline `aspectRatio`
+    // (computed from the real PNG dimensions in the useEffect
+    // above) so the strip frames edge-to-edge with no empty canvas
+    // above or below.
+    const compactShellStyle: CSSProperties = {
+        backgroundImage: `url("${imageUrl}")`,
+        backgroundSize: '100% auto',
+        backgroundPosition: 'center bottom',
+        backgroundRepeat: 'no-repeat',
+        height: '100%',
+        top: 0,
+        bottom: 0,
+    };
+
+    const activeShellStyle: CSSProperties = compact
+        ? compactShellStyle
+        : shellStyle;
 
     const labelStyle: CSSProperties =
         labelBox !== null
@@ -415,9 +504,19 @@ export default function ThemeSkinPreview({
             <div
                 ref={containerRef}
                 className={cn(
-                    'relative isolate aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-neutral-950 shadow-[0_30px_120px_-30px_rgba(0,0,0,0.65)] ring-1 ring-white/5',
+                    'relative isolate w-full overflow-hidden rounded-2xl border border-white/10 bg-neutral-950 shadow-[0_30px_120px_-30px_rgba(0,0,0,0.65)] ring-1 ring-white/5',
+                    compact
+                        ? compactAspect === null
+                            ? 'aspect-[30/1]'
+                            : null
+                        : 'aspect-video',
                     className,
                 )}
+                style={
+                    compact && compactAspect !== null
+                        ? { aspectRatio: compactAspect.toFixed(3) }
+                        : undefined
+                }
                 role="img"
                 aria-label={`Live preview of ${currentItem.headline}`}
             >
@@ -430,9 +529,11 @@ export default function ThemeSkinPreview({
                 */}
                 <div
                     className={cn(
-                        'absolute inset-x-0 bottom-0 z-10 overflow-hidden',
+                        compact
+                            ? 'absolute inset-0 z-10 overflow-hidden'
+                            : 'absolute inset-x-0 bottom-0 z-10 overflow-hidden',
                     )}
-                    style={shellStyle}
+                    style={activeShellStyle}
                 >
                     {/* Subtle dimming bar so each side-stamp sees light
                         contrast over arbitrary backgrounds. The label uses
@@ -507,8 +608,12 @@ export default function ThemeSkinPreview({
                 {/*
                   HUD overlay — sample picker / playback controls so
                   visitors can drive the preview manually and verify the
-                  theme in different lab conditions.
+                  theme in different lab conditions. Hidden in compact
+                  mode because there's no canvas above the strip to
+                  anchor the badge to and the playback controls are
+                  noise when the user is just scanning the theme.
                 */}
+                {compact ? null : (
                 <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-4">
                     <div className="pointer-events-auto flex items-center justify-between">
                         <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-3 py-1 text-[11px] tracking-widest text-white/85 uppercase backdrop-blur">
@@ -579,6 +684,7 @@ export default function ThemeSkinPreview({
                         ))}
                     </div>
                 </div>
+                )}
             </div>
         </>
     );

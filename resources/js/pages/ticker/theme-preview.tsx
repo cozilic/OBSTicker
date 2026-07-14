@@ -124,7 +124,7 @@ export default function TickerThemePreview({ theme, themesUrl, createThemeUrl }:
                 <ThemeSkinPreview
                     imageUrl={theme.url}
                     items={items}
-                    className="h-[clamp(200px,32vw,400px)] w-full"
+                    compact
                     onMetaLoaded={setResolvedMeta}
                 />
 
