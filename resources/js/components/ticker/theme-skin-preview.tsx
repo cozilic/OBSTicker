@@ -24,12 +24,18 @@ type ThemeSkinPreviewProps = {
      * this PNG look right as a thumbnail". The HUD overlay (LIVE
      * PREVIEW badge + playback controls + dot indicator) is hidden in
      * compact mode because there's no canvas above the strip to put
-     * it on. The container's aspect is the strip's natural aspect
-     * (~30:1 for a 16:9 canvas, ~22:1 for 4:3) so the WHOLE strip
-     * fills the box — title stamp + content slot + end stamp are all
-     * visible at their natural width. The compiled PNG is scaled to
-     * fit the container's width and anchored to the bottom so the
-     * strip area (the bottom 6% of the PNG) is what you see.
+     * it on. The container's aspect is the STRIP's natural aspect,
+     * measured via a throwaway <img> probe (see the useEffect below)
+     * — for post-c643291 bbox-cropped recompiled PNGs this is just
+     * `naturalWidth / naturalHeight` (e.g. ~16:1 for a 6.2% span
+     * like dusk.png's 1920×119, ~60:1 for a 1.7% span like
+     * trimmed.png's 1920×32, ~14:1 for a 13% span). The brief flash
+     * before the probe resolves uses `aspect-[30/1]` as a safe 16:9
+     * default so a non-cropped PNG still frames edge-to-edge during
+     * the one paint where the probe hasn't returned yet. The compiled
+     * PNG is already the strip itself, so the container is just the
+     * strip's natural aspect — title stamp + content slot + end
+     * stamp are all visible at their natural width.
      */
     compact?: boolean;
 };
@@ -329,17 +335,26 @@ export default function ThemeSkinPreview({
         };
     }, [items.length, cycleMs, isPaused]);
 
-    // Measure the source PNG so the compact container's aspect ratio
-    // matches the strip's natural aspect. Loading the image into a
-    // throwaway <img> is cheap (browser-decoded only, never inserted
-    // into the DOM) and lets us adapt to any canvas aspect (16:9,
-    // 4:3, 21:9) without hardcoding. The strip is the bottom 6% of
-    // the canvas height, so its aspect = naturalWidth /
-    // (naturalHeight * 0.06). Only runs in compact mode — in the
-    // full-canvas 16:9 mode the aspect-video className is enough.
-    // Starts at `null` so the first render falls back to the
-    // `aspect-[30/1]` className (a safe 16:9 default) and avoids a
-    // flash of an empty container while the probe is in flight.
+    // Measure the recompiled PNG so the compact container's aspect
+    // ratio matches the strip's natural aspect. Loading the image
+    // into a throwaway <img> is cheap (browser-decoded only, never
+    // inserted into the DOM) and lets us adapt to any canvas aspect
+    // (16:9, 4:3, 21:9) without hardcoding. Pre-c643291 the
+    // recompile emitted a full 1920×1080 canvas — so the strip's
+    // aspect was naturalWidth / (naturalHeight * 0.06). After the
+    // bbox-aware recompile (c643291) the PNG IS the painted strip
+    // cropped to the bbox vertical span (e.g. 1920×119 for a 6.2%
+    // span, 1920×32 for a 1.7% span). The `* 0.06` multiplier on
+    // these cropped PNGs now over-shrinks by a factor of
+    // ~14–60× depending on bbox — dusk.png (1920×119) would
+    // resolve to ~269:1, rendering the container as a 3–5 px sliver
+    // the user can't see. The corrected aspect is just
+    // naturalWidth / naturalHeight — the PNG is already the strip.
+    // Only runs in compact mode — in the full-canvas 16:9 mode the
+    // aspect-video className is enough. Starts at `null` so the
+    // first render falls back to the `aspect-[30/1]` className (a
+    // safe 16:9 default) and avoids a flash of an empty container
+    // while the probe is in flight.
     useEffect(() => {
         if (!compact || typeof imageUrl !== 'string' || imageUrl === '') {
             return;
@@ -349,7 +364,7 @@ export default function ThemeSkinPreview({
         probe.onload = () => {
             if (probe.naturalHeight > 0) {
                 setCompactAspect(
-                    probe.naturalWidth / (probe.naturalHeight * 0.06),
+                    probe.naturalWidth / probe.naturalHeight,
                 );
             }
         };
