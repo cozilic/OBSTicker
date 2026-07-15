@@ -1,5 +1,6 @@
 import { Form, Head } from '@inertiajs/react';
 import {
+    AlertCircle,
     ChevronDown,
     Copy,
     ExternalLink,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -838,8 +840,30 @@ export default function TickerDashboard({
                                 {...updateSettings.form()}
                                 className="flex flex-col gap-4"
                             >
-                                {({ processing }) => (
+                                {({ processing, errors }) => (
                                     <>
+                                        {Object.keys(errors).length > 0 && (
+                                            <Alert variant="destructive">
+                                                <AlertCircle />
+                                                <AlertTitle>Save failed</AlertTitle>
+                                                <AlertDescription>
+                                                    <ul className="list-disc space-y-1 pl-4 text-left">
+                                                        {Object.entries(errors).map(
+                                                            ([field, message]) => (
+                                                                <li key={field}>
+                                                                    <span className="font-mono text-xs">
+                                                                        {field}:
+                                                                    </span>{' '}
+                                                                    {Array.isArray(message)
+                                                                        ? message.join(', ')
+                                                                        : String(message)}
+                                                                </li>
+                                                            ),
+                                                        )}
+                                                    </ul>
+                                                </AlertDescription>
+                                            </Alert>
+                                        )}
                                         <div className="rounded-lg border bg-card">
                                             <div className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
                                                 <span className="min-w-0">
