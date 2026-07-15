@@ -1065,8 +1065,17 @@ export default function TickerTheme() {
         const tick = (now: number): void => {
             const elapsed = now - startTime;
             const target = Math.min(elapsed / 400, 1);
-            const eased = 1 - Math.pow(1 - target, 3);
-            setPreviewProgress(eased * 92);
+            // Linear 0 → 100 ramp over ~400ms. The previous shape
+            // used a cubic ease-out capped at 92%, which produced
+            // exactly the symptom the user reported: the counter
+            // crawled past 90% within the first ~150ms and then
+            // froze at 92% until the network response arrived,
+            // after which a hard snap to 100% produced a visible
+            // jump. Linear 0 → 100 in 400ms reads as a coherent
+            // "the request is fast anyway" countdown — the user
+            // gets a single sweep from 0% to 100%, no plateau at
+            // 92%, no jump on completion.
+            setPreviewProgress(target * 100);
 
             if (target < 1 && abortRef.current === controller) {
                 rafId = requestAnimationFrame(tick);
