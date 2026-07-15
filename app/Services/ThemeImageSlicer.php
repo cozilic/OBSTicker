@@ -205,12 +205,32 @@ class ThemeImageSlicer
                 $userSplit1 = max($bboxLeftPct + 0.01, min($bboxRightPct - 0.01, (float) $userSplit1));
                 $userSplit2 = max($userSplit1 + 0.01, min($bboxRightPct, (float) $userSplit2));
 
-                $leftWidth = max(1, (int) round((($userSplit1 - $bboxLeftPct) / 100.0) * $effectiveCanvasWidth));
-                $rightWidth = max(1, (int) round((($bboxRightPct - $userSplit2) / 100.0) * $effectiveCanvasWidth));
-                $middleWidth = max(1, (int) round((($userSplit2 - $userSplit1) / 100.0) * $effectiveCanvasWidth));
-
+                // Compute the bbox pixel anchors BEFORE the slot widths so
+                // the residue math below can reference them without PHP
+                // emitting an undefined-variable notice and defaulting the
+                // to zero (which would otherwise collapse the middle blit
+                // and let the right slot overlap the middle). This mirrors
+                // the first-pass branch, which assigns $bboxLeftPx /
+                // $bboxRightPx at the top of its block for the same reason.
                 $bboxLeftPx = (int) round(($bboxLeftPct / 100.0) * $effectiveCanvasWidth);
                 $bboxRightPx = (int) round(($bboxRightPct / 100.0) * $effectiveCanvasWidth);
+
+                $leftWidth = max(1, (int) round((($userSplit1 - $bboxLeftPct) / 100.0) * $effectiveCanvasWidth));
+                $rightWidth = max(1, (int) round((($bboxRightPct - $userSplit2) / 100.0) * $effectiveCanvasWidth));
+                // Middle width is the integer-pixel residue between $bboxLeftPx
+                // and $bboxRightPx (NOT a third independent round()). When the
+                // user picks splits like 14.5%/85.5% at canvas=1920, the
+                // independent rounds produce 278 + 1363 + 278 = 1919 — leaving
+                // a one-pixel transparent column at the middle→right seam,
+                // which the live shell renders as a hairline "black line" at
+                // split_2 (the body color shows through). The residue math
+                // guarantees leftWidth + middleWidth + rightWidth =
+                // $bboxRightPx - $bboxLeftPx exactly, eliminating any seam
+                // drift while keeping $leftWidth/$rightWidth (and the visible
+                // stamp metrics derived from them) bit-identical to before.
+                // The first-pass branch already used this residue pattern;
+                // the recompile branch is now consistent with it.
+                $middleWidth = max(1, $bboxRightPx - $bboxLeftPx - $leftWidth - $rightWidth);
 
                 // Already-trimmed PNGs sit at their natural heights; the
                 // tallest wins, capped at MAX_STYLE_HEIGHT so an oversized
