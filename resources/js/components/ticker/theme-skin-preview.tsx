@@ -38,6 +38,20 @@ type ThemeSkinPreviewProps = {
      * stamp are all visible at their natural width.
      */
     compact?: boolean;
+    /**
+     * Source canvas height in px — drives the full-canvas branch's
+     * `fullCanvasShellHeight` math so the preview matches the live
+     * ticker for any user-configured canvas height (the validator
+     * accepts canvas_height in [180, 4320] — see
+     * app/Http/Requests/UpdateTickerSettingRequest.php). Defaults to
+     * {@see PREVIEW_CANVAS.height} (1080) for the public preview pages
+     * that don't carry a settings bag in scope. The live ticker
+     * (resources/js/pages/ticker/show.tsx) reads canvas_height
+     * directly from `payload.settings.canvas_height`; threading the
+     * same value through here keeps WYSIWYG parity across both
+     * viewers without a separate pipeline.
+     */
+    canvasHeight?: number;
 };
 
 export type ThemeMeta = {
@@ -183,6 +197,7 @@ export default function ThemeSkinPreview({
     className,
     onMetaLoaded,
     compact = false,
+    canvasHeight,
 }: ThemeSkinPreviewProps) {
     const [themeMeta, setThemeMeta] = useState<ThemeMeta | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
@@ -426,19 +441,27 @@ export default function ThemeSkinPreview({
     // extent when the theme's meta.json is loaded, so the band
     // frames the painted strip exactly — no top/bottom crop.
     // Mirrors the shellHeight branch in resources/js/pages/ticker/
-    // show.tsx. dyn2 (top_pct=15.87, bottom_pct=23.67) produces a
-    // PNG of `bottom_pct − top_pct` percent of PREVIEW_CANVAS.height
-    // (~84px on a 1080p design); the previous hardcoded `6%` (~65px)
-    // made `backgroundSize: 100% auto` overflow and crop ~9px off
-    // each end. Themes without meta.json (legacy / a no-bbox skin)
-    // keep the original 6% so the bar still renders at a sensible
-    // height. Source-natural vertical range is bounded to
-    // [32, 250]px so abnormally thin or fat bboxes can't blow the
-    // container up.
+    // show.tsx so the preview and the live ticker agree for any
+    // user-configured canvas height (the live side reads
+    // payload.settings.canvas_height; the preview side reads the
+    // canvasHeight prop and falls back to PREVIEW_CANVAS.height =
+    // 1080 for callers that don't carry a settings bag). dyn2
+    // (top_pct=15.87, bottom_pct=23.67) on a 1080 canvas produces
+    // a PNG of `bottom_pct − top_pct` percent of canvas_height
+    // (~84px); on a 720 canvas the live and preview agree at ~56px.
+    // Themes without meta.json (legacy / a no-bbox skin) fall back
+    // to a 6% canvas assumption clamped to show.tsx's [36, 96]
+    // envelope so the bar renders at a sensible height regardless
+    // of canvas dimensions. Source-natural vertical range is
+    // bounded to [32, 250]px so abnormally thin or fat bboxes
+    // can't blow the container up; the [36, 96] fallback envelope
+    // keeps the no-meta path within the same family so a missing
+    // fetch doesn't render the strip off-axis relative to the live.
+    const effectiveCanvasHeight = canvasHeight ?? PREVIEW_CANVAS.height;
     const fullCanvasShellHeight = themeMeta !== null
         ? clamp(
             Math.round(
-                PREVIEW_CANVAS.height *
+                effectiveCanvasHeight *
                     (Math.max(
                         0,
                         themeMeta.bottom_pct - themeMeta.top_pct,
@@ -448,7 +471,11 @@ export default function ThemeSkinPreview({
             32,
             250,
         )
-        : Math.round(PREVIEW_CANVAS.height * 0.06);
+        : clamp(
+            Math.round(effectiveCanvasHeight * 0.06),
+            36,
+            96,
+        );
 
     const shellStyle: CSSProperties = {
         backgroundImage: `url("${imageUrl}")`,
