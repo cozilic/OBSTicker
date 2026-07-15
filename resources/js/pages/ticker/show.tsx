@@ -170,11 +170,32 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const headlineText = headline || payload.settings.headline;
     const hasImage = !hasThemeSkin && Boolean(payload.settings.image_url);
     const labelIsRight = payload.settings.label_position === 'right';
-    const shellHeight = clamp(
-        Math.round(payload.settings.canvas_height * 0.06),
-        36,
-        96,
-    );
+    // The shell height matches the recompiled PNG's vertical extent
+    // when a theme skin with bbox metadata is loaded, so
+    // `backgroundSize: '100% auto'` paints the full PNG without clipping
+    // the top/bottom. dyn2 (top_pct=15.87, bottom_pct=23.67) used to
+    // paint an 84px PNG inside a 65px shell — with `center 52%` the
+    // image overflowed top and bottom by ~9px each. Themes without a
+    // meta.json (legacy / a no-bbox skin) keep the original 6% of
+    // canvas assumption so the bar still renders at a sensible height.
+    const shellHeight = useTickerSkin && themeMeta !== null
+        ? clamp(
+            Math.round(
+                payload.settings.canvas_height *
+                    (Math.max(
+                        0,
+                        themeMeta.bottom_pct - themeMeta.top_pct,
+                    ) /
+                        100),
+            ),
+            32,
+            250,
+        )
+        : clamp(
+            Math.round(payload.settings.canvas_height * 0.06),
+            36,
+            96,
+        );
     const labelWidth = useTickerSkin
         ? 0
         : clamp(Math.round(payload.settings.canvas_width * 0.12), 120, 320);
@@ -385,7 +406,14 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
             ? 'transparent'
             : chromaContentBackground,
         backgroundImage: tickerSkinUrl ? `url("${tickerSkinUrl}")` : undefined,
-        backgroundPosition: 'center 52%',
+        // Anchor at the bottom so the strip art sits flush with the
+        // screen edge instead of landing at the lossy 'center 52%'
+        // offset that paired with `100% auto` to crop the PNG's top
+        // and bottom. With the dynamic shellHeight above matching the
+        // PNG's natural height, this floor alignment is a no-op
+        // visually but stays correct if the source happens to be
+        // shorter than the canvas (then top of the shell is empty).
+        backgroundPosition: 'center bottom',
         backgroundRepeat: 'no-repeat',
         backgroundSize: '100% auto',
         color: tickerTextColor,
