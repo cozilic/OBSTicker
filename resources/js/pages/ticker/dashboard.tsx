@@ -80,6 +80,7 @@ type TickerSettings = {
     accent_color: string;
     canvas_width: number;
     canvas_height: number;
+    scale_percent: number;
     animation_style: 'slide-left' | 'fade' | 'bounce' | 'zoom';
     animation_duration_seconds: number;
     animation_out_duration_seconds: number;
@@ -172,6 +173,14 @@ export default function TickerDashboard({
     // backend's required-color validator still passes).
     const [skinMode, setSkinMode] = useState<'colors' | 'theme'>(
         selectedTickerStyleValue !== '__none' ? 'theme' : 'colors',
+    );
+    // Mirror the slider's current value in React state so the
+    // "Display scale (NN%)" label updates while the user drags the
+    // range input. Without this, the label stays glued to the last
+    // saved settings.scale_percent until the next reload — making
+    // it impossible to read the picked value without submitting.
+    const [scalePercent, setScalePercent] = useState<number>(
+        settings.scale_percent ?? 100,
     );
     // Refs to the two radio-group buttons. The WAI-ARIA radio
     // pattern requires exactly one radio to be the tab stop
@@ -1173,6 +1182,41 @@ export default function TickerDashboard({
                                                         settings.user_headline
                                                     }
                                                 />
+                                            </div>
+                                        </SettingsSection>
+                                        <SettingsSection
+                                            title="Display scale"
+                                            description="Visually grow or shrink the ticker inside the OBS canvas. Larger values may clip if the canvas is too narrow; smaller values leave breathing room around the strip. Does not change the canvas bounds themselves — that is a separate field below."
+                                            defaultOpen
+                                        >
+                                            <div>
+                                                <Label htmlFor="scale_percent">
+                                                    Display scale ({scalePercent}%)
+                                                </Label>
+                                                <Input
+                                                    id="scale_percent"
+                                                    name="scale_percent"
+                                                    type="range"
+                                                    min="20"
+                                                    max="200"
+                                                    step="5"
+                                                    value={scalePercent}
+                                                    onChange={(event) =>
+                                                        setScalePercent(
+                                                            Number(
+                                                                event.target
+                                                                    .value,
+                                                            ),
+                                                        )
+                                                    }
+                                                />
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    Range 20-200%. Step 5%. Default 100%
+                                                    keeps the on-OBS layout at its native
+                                                    size; 200% fills the canvas twice
+                                                    over (may overflow the visible region
+                                                    depending on your OBS source bounds).
+                                                </p>
                                             </div>
                                         </SettingsSection>
                                         <SettingsSection

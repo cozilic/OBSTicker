@@ -13,6 +13,7 @@ type TickerPayload = {
         accent_color: string;
         canvas_width: number;
         canvas_height: number;
+        scale_percent: number;
         animation_style: 'slide-left' | 'fade' | 'bounce' | 'zoom';
         animation_duration_seconds: number;
         animation_out_duration_seconds: number;
@@ -49,6 +50,7 @@ const fallbackPayload: TickerPayload = {
         accent_color: '#38bdf8',
         canvas_width: 1920,
         canvas_height: 1080,
+        scale_percent: 100,
         animation_style: 'slide-left',
         animation_duration_seconds: 1,
         animation_out_duration_seconds: 1,
@@ -395,6 +397,25 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
         5,
         240,
     );
+    // User-driven display scale (20-200%) from the ticker-admin
+    // "Display scale" slider. Applied to the live ticker as a CSS
+    // transform: scale on a separate WRAPPER element so the inline
+    // transform does NOT collide with the existing
+    // `.lower-third-in` / `.lower-third-out` and per-animation
+    // `.lower-third-slide-left | .lower-third-fade | .lower-third-bounce
+    // | .lower-third-zoom` keyframes — those use
+    // `animation-fill-mode: both` and write to `transform`, which
+    // would permanently override an inline transform on the shell
+    // itself. Wrapping the shell in a dedicated scale element keeps
+    // the two transform stacks on different elements so both win
+    // cleanly. `transform-origin: center bottom` keeps the ticker
+    // anchored to the canvas's bottom edge so it grows upward (not
+    // floats upward) when the user sets scale > 100%.
+    const tickerScalePercent = clamp(payload.settings.scale_percent ?? 100, 20, 200);
+    const scaledShellWrapperStyle: CSSProperties = {
+        transform: `scale(${tickerScalePercent / 100})`,
+        transformOrigin: 'center bottom',
+    };
     const shellStyle: CSSProperties & {
         '--lower-third-in-duration': string;
         '--lower-third-out-duration': string;
@@ -873,6 +894,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                         style={{ backgroundColor: chromaBackground }}
                     />
                 )}
+                <div className="absolute inset-0" style={scaledShellWrapperStyle}>
                 <div
                     key={`${currentItem?.type ?? 'empty'}-${currentItem?.label ?? ''}-${currentItem?.text ?? ''}-${payload.settings.animation_style}-${payload.settings.shape_style}`}
                     className={[
@@ -977,6 +999,7 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                         </div>
                     </div>
                     <div className="pointer-events-none z-[1] col-span-full row-start-1 bg-gradient-to-r from-black/30 via-transparent to-transparent" />
+                </div>
                 </div>
             </div>
         </>

@@ -44,6 +44,7 @@ class UpdateTickerSettingRequest extends FormRequest
             // rules (integer bounds, Rule::in, etc.).
             'canvas_width' => ['sometimes', 'integer', 'min:320', 'max:7680'],
             'canvas_height' => ['sometimes', 'integer', 'min:180', 'max:4320'],
+            'scale_percent' => ['sometimes', 'integer', 'min:20', 'max:200'],
             'animation_style' => ['sometimes', Rule::in(['slide-left', 'fade', 'bounce', 'zoom'])],
             'animation_duration_seconds' => ['sometimes', 'integer', 'min:1', 'max:10'],
             'animation_out_duration_seconds' => ['sometimes', 'integer', 'min:1', 'max:10'],

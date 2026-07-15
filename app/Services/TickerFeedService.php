@@ -26,6 +26,7 @@ class TickerFeedService
      *         accent_color: string,
      *         canvas_width: int,
      *         canvas_height: int,
+     *         scale_percent: int,
      *         animation_style: string,
      *         animation_duration_seconds: int,
      *         animation_out_duration_seconds: int,
@@ -122,10 +123,11 @@ class TickerFeedService
      *     chroma_key_color: string,
      *     image_url: string|null,
      *     crawl_duration_seconds: int,
-     *     message_display_seconds: int,
-     *     poll_interval_seconds: int,
-     *     show_rss: bool
-     * }
+     *         message_display_seconds: int,
+     *         poll_interval_seconds: int,
+     *         scale_percent: int,
+     *         show_rss: bool
+     *     }
      */
     private function settingsPayload(TickerSetting $settings): array
     {
@@ -138,6 +140,7 @@ class TickerFeedService
             'accent_color' => $settings->accent_color,
             'canvas_width' => $settings->canvas_width,
             'canvas_height' => $settings->canvas_height,
+            'scale_percent' => $settings->scale_percent,
             'animation_style' => $settings->animation_style,
             'animation_duration_seconds' => $settings->animation_duration_seconds,
             'animation_out_duration_seconds' => $settings->animation_out_duration_seconds,
@@ -193,6 +196,7 @@ class TickerFeedService
      *         accent_color: string,
      *         canvas_width: int,
      *         canvas_height: int,
+     *         scale_percent: int,
      *         animation_style: string,
      *         animation_duration_seconds: int,
      *         animation_out_duration_seconds: int,

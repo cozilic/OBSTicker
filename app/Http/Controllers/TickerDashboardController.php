@@ -61,6 +61,7 @@ class TickerDashboardController extends Controller
                 'accent_color',
                 'canvas_width',
                 'canvas_height',
+                'scale_percent',
                 'animation_style',
                 'animation_duration_seconds',
                 'animation_out_duration_seconds',
