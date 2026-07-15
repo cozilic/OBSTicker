@@ -32,20 +32,30 @@ class UpdateTickerSettingRequest extends FormRequest
             'background_color' => ['required', 'hex_color'],
             'text_color' => ['required', 'hex_color'],
             'accent_color' => ['required', 'hex_color'],
-            'canvas_width' => ['required', 'integer', 'min:320', 'max:7680'],
-            'canvas_height' => ['required', 'integer', 'min:180', 'max:4320'],
-            'animation_style' => ['required', Rule::in(['slide-left', 'fade', 'bounce', 'zoom'])],
-            'animation_duration_seconds' => ['required', 'integer', 'min:1', 'max:10'],
-            'animation_out_duration_seconds' => ['required', 'integer', 'min:1', 'max:10'],
-            'shape_style' => ['required', Rule::in(['bar', 'pill', 'angled'])],
+            // Closed-by-default <Collapsible> sections in
+            // resources/js/pages/ticker/dashboard.tsx unmount their
+            // content from the DOM entirely (Radix CollapsibleContent
+            // uses forceMount=false), so the validator can't demand
+            // 'required' on these inputs — the user sees every field
+            // inside a closed section as "X is required" the moment
+            // they Save with a single field elsewhere. Use
+            // 'sometimes' so a partial submit (e.g. just rss_headline)
+            // passes; submitted values still validate via the inner
+            // rules (integer bounds, Rule::in, etc.).
+            'canvas_width' => ['sometimes', 'integer', 'min:320', 'max:7680'],
+            'canvas_height' => ['sometimes', 'integer', 'min:180', 'max:4320'],
+            'animation_style' => ['sometimes', Rule::in(['slide-left', 'fade', 'bounce', 'zoom'])],
+            'animation_duration_seconds' => ['sometimes', 'integer', 'min:1', 'max:10'],
+            'animation_out_duration_seconds' => ['sometimes', 'integer', 'min:1', 'max:10'],
+            'shape_style' => ['sometimes', Rule::in(['bar', 'pill', 'angled'])],
             'ticker_style' => ['nullable', 'string', 'max:255', $this->tickerStyleRule()],
             'ticker_use_image_style' => ['sometimes', 'boolean'],
-            'label_position' => ['required', Rule::in(['left', 'right'])],
-            'chroma_key_color' => ['required', Rule::in(['green', 'blue', 'magenta'])],
+            'label_position' => ['sometimes', Rule::in(['left', 'right'])],
+            'chroma_key_color' => ['sometimes', Rule::in(['green', 'blue', 'magenta'])],
             'image_url' => ['nullable', 'url', 'max:2048'],
-            'crawl_duration_seconds' => ['required', 'integer', 'min:10', 'max:180'],
-            'message_display_seconds' => ['required', 'integer', 'min:5', 'max:120'],
-            'poll_interval_seconds' => ['required', 'integer', 'min:5', 'max:120'],
+            'crawl_duration_seconds' => ['sometimes', 'integer', 'min:10', 'max:180'],
+            'message_display_seconds' => ['sometimes', 'integer', 'min:5', 'max:120'],
+            'poll_interval_seconds' => ['sometimes', 'integer', 'min:5', 'max:120'],
             'require_auth_to_submit' => ['sometimes', 'boolean'],
             'moderator_only_submissions' => ['sometimes', 'boolean'],
             'show_rss' => ['sometimes', 'boolean'],
