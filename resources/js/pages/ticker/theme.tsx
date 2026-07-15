@@ -1065,17 +1065,24 @@ export default function TickerTheme() {
         const tick = (now: number): void => {
             const elapsed = now - startTime;
             const target = Math.min(elapsed / 400, 1);
-            // Linear 0 → 100 ramp over ~400ms. The previous shape
+            // Linear 0 → 99 ramp over ~400ms. The previous shape
             // used a cubic ease-out capped at 92%, which produced
             // exactly the symptom the user reported: the counter
             // crawled past 90% within the first ~150ms and then
             // froze at 92% until the network response arrived,
             // after which a hard snap to 100% produced a visible
-            // jump. Linear 0 → 100 in 400ms reads as a coherent
-            // "the request is fast anyway" countdown — the user
-            // gets a single sweep from 0% to 100%, no plateau at
-            // 92%, no jump on completion.
-            setPreviewProgress(target * 100);
+            // jump. The 99% ceiling is deliberate: the rAF chain
+            // saturates at 99% at exactly 400ms so a slow network
+            // roundtrip (cold preview, slow Artisan serve) doesn't
+            // leave the counter visually sitting at 100% before the
+            // success setPreviewProgress(100) fires; instead the
+            // user sees the counter reach 99% and tick to 100% on
+            // completion, which reads as a coherent "the request
+            // is fast anyway" countdown. Plus the "+1%" tick on
+            // completion is invisible to humans while still
+            // guaranteeing the counter never appears stuck before
+            // the image swaps in.
+            setPreviewProgress(Math.min(target * 100, 99));
 
             if (target < 1 && abortRef.current === controller) {
                 rafId = requestAnimationFrame(tick);
