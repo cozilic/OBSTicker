@@ -71,16 +71,19 @@ class ThemeImageSlicer
      *
      * @param  array{float, float}|null  $splitPercentages
      *                                                      Optional [split_1, split_2] percentages from the original
-     *                                                      commit. When non-null, this signals the recompile path
-     *                                                      called by TickerStyleRepository::compileThemes on every
-     *                                                      theme load — the input PNGs are the un-trimmed cut-region
-     *                                                      halves already on disk, and slot widths must derive from
-     *                                                      these percentages × canvasWidth rather than from
-     *                                                      imagesx() (using the latter would collapse the chosen
-     *                                                      proportions whenever the source had transparent padding
-     *                                                      inside a cut region). When null, the input PNGs are
-     *                                                      treated as fresh-from-source (the first-pass flow)
-     *                                                      and slot widths are derived from imagesx() of the cuts.
+     *                                                      commit. When non-null, slot widths derive from these
+     *                                                      percentages × canvasWidth rather than from imagesx()
+     *                                                      of the cuts — using the latter would collapse the
+     *                                                      chosen proportions whenever the source had transparent
+     *                                                      padding inside a cut region. Two callers forward this
+     *                                                      argument: TickerStyleRepository::compileThemes
+     *                                                      (recompile read path on every theme load) and
+     *                                                      ThemeImageSlicer::sliceFromSingle (commit + preview
+     *                                                      write path, after the 2026-07-15 alignment fix that
+     *                                                      routed preview/commit through the same absolute-
+     *                                                      percentage math as recompile). When null, the input
+     *                                                      PNGs are treated as a legacy 3-file payload and slot
+     *                                                      widths are derived from imagesx() of the cuts.
      * @return array{
      *     title_stamp_left_pct: float,
      *     title_stamp_width_pct: float,
@@ -152,28 +155,30 @@ class ThemeImageSlicer
             $leftBounds = $this->visibleBounds($leftImg);
             $rightBounds = $this->visibleBounds($rightImg);
 
-            if ($splitPercentages === null) {
-                // First-pass flow (sliceFromSingle, controller commit):
-                // persist the UN-trimmed cut-region halves to $themeDir
-                // when the caller wants assets on disk. Earlier
-                // revisions ran a vivid-style alpha-crop here that
-                // cropped those halves to the visible-bounds rect, but
-                // that stripping deleted deliberate fades/gutters the
-                // user designed around the visible artwork — they were
-                // the same transparent pixels visibleBounds() ignores.
-                // Slot widths still come from $splitPercentages via the
-                // controller, so leaving the on-disk PNGs untrimmed is
-                // safe; alpha awareness for the *metrics* happens
-                // above via the bounds we're already holding.
-                if ($themeDir !== null) {
-                    File::ensureDirectoryExists($themeDir);
+            // Persist the UN-trimmed cut-region halves to $themeDir
+            // whenever the caller asked for them. TickerStyleRepository
+            // ::compileThemes() (the recompile read path) passes
+            // $themeDir=null so this block is a no-op on that path;
+            // the only writer to $themeDir is
+            // {@see self::sliceFromSingle()} via the controller
+            // commit/preview endpoints. Earlier revisions ran an
+            // alpha-crop here that trimmed the on-disk halves to
+            // the visible-bounds rect, but that stripping deleted
+            // deliberate fades/gutters the user designed around the
+            // visible artwork — they were the same transparent
+            // pixels visibleBounds() ignores. Alpha awareness for
+            // the *metrics* happens above via the bounds we're
+            // already holding; the on-disk PNGs stay un-trimmed so
+            // the recompile path sees the same pixel source on every
+            // read.
+            if ($themeDir !== null) {
+                File::ensureDirectoryExists($themeDir);
 
-                    // PNG compression level 9 keeps the on-disk theme assets
-                    // small without affecting the alpha channel.
-                    imagepng($leftImg, $themeDir.'/title.png', 9);
-                    imagepng($middleImg, $themeDir.'/content.png', 9);
-                    imagepng($rightImg, $themeDir.'/end.png', 9);
-                }
+                // PNG compression level 9 keeps the on-disk theme assets
+                // small without affecting the alpha channel.
+                imagepng($leftImg, $themeDir.'/title.png', 9);
+                imagepng($middleImg, $themeDir.'/content.png', 9);
+                imagepng($rightImg, $themeDir.'/end.png', 9);
             }
 
             $effectiveCanvasWidth = max(1, $canvasWidth ?? self::DEFAULT_CANVAS_WIDTH);
@@ -245,10 +250,21 @@ class ThemeImageSlicer
                     )),
                 ));
             } else {
-                // First-pass flow: no bbox math (cuts are already aligned
-                // to the source artwork inside `splitToTempPngs`), so the
-                // slots run canvas-edge-to-canvas-edge for backwards
-                // compatibility with pre-bbox themes.
+                // Legacy 3-file fallback (no `$splitPercentages`):
+                // slot widths are derived from imagesx() of each cut
+                // region and allocated proportionally across the
+                // canvas. Used only by the legacy title-/content-/
+                // end.png POST payload in
+                // {@see TickerDashboardController::handleLegacyStitch()},
+                // which moves the three halves onto disk before
+                // calling slice() without forwarding percentages —
+                // preserved here so that legacy uploads keep
+                // rendering without forcing the artist to recompose
+                // through the single-source-image theme builder.
+                // The preview/commit path through
+                // {@see self::sliceFromSingle()} now forwards
+                // [$split1, $split2], so it never reaches this
+                // branch.
                 $bboxLeftPx = 0;
                 $bboxRightPx = $effectiveCanvasWidth;
                 // First-pass flow proportional allocation, keyed off the
@@ -649,6 +665,25 @@ class ThemeImageSlicer
                 $returnPreview ? $tempDir.'/preview.png' : null,
                 null,
                 null,
+                // Forward the user's chosen splits + bbox so slice()
+                // runs the bbox-aware recompile math on the very
+                // first commit/preview. Without these, slice() falls
+                // back to the legacy "proportional allocation" branch
+                // which scales the bbox to fill 100% of the canvas —
+                // a path that disagrees with the recompile path's
+                // absolute-percentage math, so the live ticker (which
+                // reads the persisted split_1/split_2 + bbox via
+                // meta.json and positions the scrolling viewport with
+                // `left: split_1%`) ends up scrolling text into the
+                // slot the preview never intended. Forwarding the
+                // percentages here aligns preview / first-pass commit
+                // / recompile on a single coordinate system so the
+                // theme-builder "Source parts" overlay, the preview
+                // base64 PNG, the on-disk compiled PNG and the live
+                // ticker all agree on the same split positions.
+                [$split1, $split2],
+                $leftPct,
+                $rightPct,
             );
 
             if (! is_array($metrics)) {
