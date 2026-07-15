@@ -402,7 +402,19 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     } = {
         bottom: '0',
         height: `${shellHeight}px`,
-        backgroundColor: useTickerSkin
+        // In non-chroma the body falls through to css/app.css's
+        // `.dark { --background: oklch(0.145 0 0) }` rule, so a
+        // transparent shell reveals a near-black backside wherever
+        // the compiled PNG's CONTAIN-fit slots leave transparent
+        // columns (typical at the content→end seam where the
+        // source's right-edge cut has a fade or the alpha-aware
+        // fit lands on transparency). The reported "black line"
+        // symptom is exactly that leak. Pin the shell opaque only
+        // when a skin is active AND we're not chroma-keying; keep
+        // chroma+skin transparent (OBS chroma-bleed) and
+        // chroma+non-skin at its original `'#0f172a'` dark slate
+        // via `chromaContentBackground`.
+        backgroundColor: useChromaKey && useTickerSkin
             ? 'transparent'
             : chromaContentBackground,
         backgroundImage: tickerSkinUrl ? `url("${tickerSkinUrl}")` : undefined,
