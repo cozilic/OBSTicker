@@ -1678,191 +1678,197 @@ export default function TickerTheme() {
                                                         </div>
                                                     )}
 
-                                                    <VerticalHandle
-                                                        which="left"
-                                                        percentage={bboxLeft}
-                                                        start={startVerticalDrag(
-                                                            'left',
-                                                        )}
-                                                        move={moveVerticalDrag}
-                                                        end={endDrag}
-                                                        keyDrag={keyVerticalDrag(
-                                                            'left',
-                                                        )}
-                                                    />
-                                                    <VerticalHandle
-                                                        which="split1"
-                                                        percentage={split1}
-                                                        start={startVerticalDrag(
-                                                            'split1',
-                                                        )}
-                                                        move={moveVerticalDrag}
-                                                        end={endDrag}
-                                                        keyDrag={keyVerticalDrag(
-                                                            'split1',
-                                                        )}
-                                                    />
-                                                    <VerticalHandle
-                                                        which="split2"
-                                                        percentage={split2}
-                                                        start={startVerticalDrag(
-                                                            'split2',
-                                                        )}
-                                                        move={moveVerticalDrag}
-                                                        end={endDrag}
-                                                        keyDrag={keyVerticalDrag(
-                                                            'split2',
-                                                        )}
-                                                    />
-                                                    <VerticalHandle
-                                                        which="right"
-                                                        percentage={bboxRight}
-                                                        start={startVerticalDrag(
-                                                            'right',
-                                                        )}
-                                                        move={moveVerticalDrag}
-                                                        end={endDrag}
-                                                        keyDrag={keyVerticalDrag(
-                                                            'right',
-                                                        )}
-                                                    />
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="pointer-events-none absolute inset-0 z-10">
+                                            {naturalDims !== null && (
+                                                <>
+                                            <VerticalHandle
+                                                which="left"
+                                                percentage={bboxLeft}
+                                                start={startVerticalDrag(
+                                                    'left',
+                                                )}
+                                                move={moveVerticalDrag}
+                                                end={endDrag}
+                                                keyDrag={keyVerticalDrag(
+                                                    'left',
+                                                )}
+                                            />
+                                            <VerticalHandle
+                                                which="split1"
+                                                percentage={split1}
+                                                start={startVerticalDrag(
+                                                    'split1',
+                                                )}
+                                                move={moveVerticalDrag}
+                                                end={endDrag}
+                                                keyDrag={keyVerticalDrag(
+                                                    'split1',
+                                                )}
+                                            />
+                                            <VerticalHandle
+                                                which="split2"
+                                                percentage={split2}
+                                                start={startVerticalDrag(
+                                                    'split2',
+                                                )}
+                                                move={moveVerticalDrag}
+                                                end={endDrag}
+                                                keyDrag={keyVerticalDrag(
+                                                    'split2',
+                                                )}
+                                            />
+                                            <VerticalHandle
+                                                which="right"
+                                                percentage={bboxRight}
+                                                start={startVerticalDrag(
+                                                    'right',
+                                                )}
+                                                move={moveVerticalDrag}
+                                                end={endDrag}
+                                                keyDrag={keyVerticalDrag(
+                                                    'right',
+                                                )}
+                                            />
 
-                                                    <HorizontalHandle
-                                                        which="top"
-                                                        percentage={bboxTop}
-                                                        start={startHorizontalDrag(
-                                                            'top',
-                                                        )}
-                                                        move={
-                                                            moveHorizontalDrag
-                                                        }
-                                                        end={endDrag}
-                                                        keyDrag={keyHorizontalDrag(
-                                                            'top',
-                                                        )}
-                                                    />
-                                                    <HorizontalHandle
-                                                        which="bottom"
-                                                        percentage={bboxBottom}
-                                                        start={startHorizontalDrag(
-                                                            'bottom',
-                                                        )}
-                                                        move={
-                                                            moveHorizontalDrag
-                                                        }
-                                                        end={endDrag}
-                                                        keyDrag={keyHorizontalDrag(
-                                                            'bottom',
-                                                        )}
-                                                    />
+                                            <HorizontalHandle
+                                                which="top"
+                                                percentage={bboxTop}
+                                                start={startHorizontalDrag(
+                                                    'top',
+                                                )}
+                                                move={
+                                                    moveHorizontalDrag
+                                                }
+                                                end={endDrag}
+                                                keyDrag={keyHorizontalDrag(
+                                                    'top',
+                                                )}
+                                            />
+                                            <HorizontalHandle
+                                                which="bottom"
+                                                percentage={bboxBottom}
+                                                start={startHorizontalDrag(
+                                                    'bottom',
+                                                )}
+                                                move={
+                                                    moveHorizontalDrag
+                                                }
+                                                end={endDrag}
+                                                keyDrag={keyHorizontalDrag(
+                                                    'bottom',
+                                                )}
+                                            />
 
-                                                    {/* Manual label box.
-                                                    Sits above the bbox
-                                                    dimming bands but below
-                                                    the four edge handles so
-                                                    the rect itself stays as
-                                                    a translucent marker
-                                                    rather than blocking the
-                                                    pointer. Coordinates come
-                                                    from the clamped labelRect
-                                                    above so the visible rect
-                                                    is always inside both the
-                                                    title slot horizontally
-                                                    and the bbox vertically,
-                                                    no matter how the artist
-                                                    dragged the handles. */}
-                                                    <div
-                                                        aria-hidden="true"
-                                                        className="pointer-events-none absolute z-[1] rounded-sm border-2 border-rose-400/85 bg-rose-400/10"
-                                                        style={{
-                                                            left: `${labelRect.left}%`,
-                                                            top: `${labelRect.top}%`,
-                                                            width: `${labelRect.width}%`,
-                                                            height: `${labelRect.height}%`,
-                                                        }}
-                                                    />
-                                                    <LabelEdgeHandle
-                                                        which="left"
-                                                        percentageX={
-                                                            labelRect.left
-                                                        }
-                                                        percentageY={
-                                                            labelRect.top +
-                                                            labelRect.height / 2
-                                                        }
-                                                        start={startLabelVerticalDrag(
-                                                            'left',
-                                                        )}
-                                                        move={
-                                                            moveLabelVerticalDrag
-                                                        }
-                                                        end={endDrag}
-                                                        keyDrag={keyLabelDrag(
-                                                            'left',
-                                                        )}
-                                                    />
-                                                    <LabelEdgeHandle
-                                                        which="right"
-                                                        percentageX={
-                                                            labelRect.left +
-                                                            labelRect.width
-                                                        }
-                                                        percentageY={
-                                                            labelRect.top +
-                                                            labelRect.height / 2
-                                                        }
-                                                        start={startLabelVerticalDrag(
-                                                            'right',
-                                                        )}
-                                                        move={
-                                                            moveLabelVerticalDrag
-                                                        }
-                                                        end={endDrag}
-                                                        keyDrag={keyLabelDrag(
-                                                            'right',
-                                                        )}
-                                                    />
-                                                    <LabelEdgeHandle
-                                                        which="top"
-                                                        percentageX={
-                                                            labelRect.left +
-                                                            labelRect.width / 2
-                                                        }
-                                                        percentageY={
-                                                            labelRect.top
-                                                        }
-                                                        start={startLabelHorizontalDrag(
-                                                            'top',
-                                                        )}
-                                                        move={
-                                                            moveLabelHorizontalDrag
-                                                        }
-                                                        end={endDrag}
-                                                        keyDrag={keyLabelDrag(
-                                                            'top',
-                                                        )}
-                                                    />
-                                                    <LabelEdgeHandle
-                                                        which="bottom"
-                                                        percentageX={
-                                                            labelRect.left +
-                                                            labelRect.width / 2
-                                                        }
-                                                        percentageY={
-                                                            labelRect.top +
-                                                            labelRect.height
-                                                        }
-                                                        start={startLabelHorizontalDrag(
-                                                            'bottom',
-                                                        )}
-                                                        move={
-                                                            moveLabelHorizontalDrag
-                                                        }
-                                                        end={endDrag}
-                                                        keyDrag={keyLabelDrag(
-                                                            'bottom',
-                                                        )}
-                                                    />
+                                            {/* Manual label box.
+                                            Sits above the bbox
+                                            dimming bands but below
+                                            the four edge handles so
+                                            the rect itself stays as
+                                            a translucent marker
+                                            rather than blocking the
+                                            pointer. Coordinates come
+                                            from the clamped labelRect
+                                            above so the visible rect
+                                            is always inside both the
+                                            title slot horizontally
+                                            and the bbox vertically,
+                                            no matter how the artist
+                                            dragged the handles. */}
+                                            <div
+                                                aria-hidden="true"
+                                                className="pointer-events-none absolute z-[1] rounded-sm border-2 border-rose-400/85 bg-rose-400/10"
+                                                style={{
+                                                    left: `clamp(0px, calc(50% + (${labelRect.left}% - 50%) * var(--zoom) + var(--panX, 0px)), calc(100% - 1.5rem))`,
+                                                    top: `clamp(0px, calc(50% + (${labelRect.top}% - 50%) * var(--zoom) + var(--panY, 0px)), calc(100% - 1.5rem))`,
+                                                    width: `calc(${labelRect.width}% * var(--zoom))`,
+                                                    height: `calc(${labelRect.height}% * var(--zoom))`,
+                                                }}
+                                            />
+                                            <LabelEdgeHandle
+                                                which="left"
+                                                percentageX={
+                                                    labelRect.left
+                                                }
+                                                percentageY={
+                                                    labelRect.top +
+                                                    labelRect.height / 2
+                                                }
+                                                start={startLabelVerticalDrag(
+                                                    'left',
+                                                )}
+                                                move={
+                                                    moveLabelVerticalDrag
+                                                }
+                                                end={endDrag}
+                                                keyDrag={keyLabelDrag(
+                                                    'left',
+                                                )}
+                                            />
+                                            <LabelEdgeHandle
+                                                which="right"
+                                                percentageX={
+                                                    labelRect.left +
+                                                    labelRect.width
+                                                }
+                                                percentageY={
+                                                    labelRect.top +
+                                                    labelRect.height / 2
+                                                }
+                                                start={startLabelVerticalDrag(
+                                                    'right',
+                                                )}
+                                                move={
+                                                    moveLabelVerticalDrag
+                                                }
+                                                end={endDrag}
+                                                keyDrag={keyLabelDrag(
+                                                    'right',
+                                                )}
+                                            />
+                                            <LabelEdgeHandle
+                                                which="top"
+                                                percentageX={
+                                                    labelRect.left +
+                                                    labelRect.width / 2
+                                                }
+                                                percentageY={
+                                                    labelRect.top
+                                                }
+                                                start={startLabelHorizontalDrag(
+                                                    'top',
+                                                )}
+                                                move={
+                                                    moveLabelHorizontalDrag
+                                                }
+                                                end={endDrag}
+                                                keyDrag={keyLabelDrag(
+                                                    'top',
+                                                )}
+                                            />
+                                            <LabelEdgeHandle
+                                                which="bottom"
+                                                percentageX={
+                                                    labelRect.left +
+                                                    labelRect.width / 2
+                                                }
+                                                percentageY={
+                                                    labelRect.top +
+                                                    labelRect.height
+                                                }
+                                                start={startLabelHorizontalDrag(
+                                                    'bottom',
+                                                )}
+                                                move={
+                                                    moveLabelHorizontalDrag
+                                                }
+                                                end={endDrag}
+                                                keyDrag={keyLabelDrag(
+                                                    'bottom',
+                                                )}
+                                            />
                                                 </>
                                             )}
                                         </div>
