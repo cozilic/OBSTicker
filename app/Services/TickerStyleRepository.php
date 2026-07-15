@@ -566,6 +566,8 @@ class TickerStyleRepository
 
                         $splitPercentages = null;
                         $augmented = false;
+                        $bboxLeftPct = null;
+                        $bboxRightPct = null;
 
                         if (isset($themeMeta['split_1'], $themeMeta['split_2'])
                             && is_numeric($themeMeta['split_1'])
@@ -574,6 +576,18 @@ class TickerStyleRepository
                                 (float) $themeMeta['split_1'],
                                 (float) $themeMeta['split_2'],
                             ];
+                            // Read the bbox so slice() can anchor the slot
+                            // math inside the painted bbox instead of the
+                            // full canvas. Legacy themes without bbox
+                            // fields fall back to null, which slice() maps
+                            // to canvas-edge-to-canvas-edge anchoring for
+                            // backwards compatibility.
+                            $bboxLeftPct = (isset($themeMeta['left_pct']) && is_numeric($themeMeta['left_pct']))
+                                ? (float) $themeMeta['left_pct']
+                                : null;
+                            $bboxRightPct = (isset($themeMeta['right_pct']) && is_numeric($themeMeta['right_pct']))
+                                ? (float) $themeMeta['right_pct']
+                                : null;
                         } else {
                             // WYCIWYG: if a legacy theme's meta.json lacks the
                             // split percentages, derive them from the actual
@@ -611,6 +625,8 @@ class TickerStyleRepository
                             null,
                             null,
                             $splitPercentages,
+                            $bboxLeftPct,
+                            $bboxRightPct,
                         );
 
                         // Persist the visible-stamp metrics the slicer

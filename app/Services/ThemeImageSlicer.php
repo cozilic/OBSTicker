@@ -97,6 +97,8 @@ class ThemeImageSlicer
         ?string $outputPng = null,
         ?string $outputJson = null, ?string $originalJson = null,
         ?array $splitPercentages = null,
+        ?float $leftPct = null,
+        ?float $rightPct = null,
     ): array|false {
         foreach ([$themeDir, $outputPng, $outputJson, $originalJson] as $writablePath) {
             if ($writablePath === null) {
@@ -185,13 +187,30 @@ class ThemeImageSlicer
                 // PNGs in this pass are post-trim, and any proportional
                 // math over their widths would compress the canvas space
                 // the designer intentionally left transparent.
-                [$userSplit1, $userSplit2] = $splitPercentages;
-                $userSplit1 = max(0.01, min(99.99, (float) $userSplit1));
-                $userSplit2 = max($userSplit1 + 0.01, min(99.99, (float) $userSplit2));
+                //
+                // Bbox-aware slot math: pull the slot boundaries inside
+                // the source-painted bbox (left_pct .. right_pct) so the
+                // rendered artwork sits where the designer dragged the
+                // handles instead of bleeding past it. With
+                // `dynamic_content_stretch` on (split_2 == right_pct), the
+                // right-slot width collapses to zero so the user gets
+                // exactly what they previewed in the theme builder.
+                $bboxLeftPct = max(0.0, min(99.99, (float) ($leftPct ?? 0.0)));
+                $bboxRightPct = max($bboxLeftPct + 0.01, min(100.0, (float) ($rightPct ?? 100.0)));
 
-                $leftWidth = max(1, (int) round(($userSplit1 / 100) * $effectiveCanvasWidth));
-                $rightWidth = max(1, (int) round(((100 - $userSplit2) / 100) * $effectiveCanvasWidth));
-                $middleWidth = max(1, $effectiveCanvasWidth - $leftWidth - $rightWidth);
+                [$userSplit1, $userSplit2] = $splitPercentages;
+                // Re-clamp splits inside the bbox so an out-of-range stored
+                // value can't push a slot off-canvas. The validator already
+                // enforces these upstream, so this is purely defensive.
+                $userSplit1 = max($bboxLeftPct + 0.01, min($bboxRightPct - 0.01, (float) $userSplit1));
+                $userSplit2 = max($userSplit1 + 0.01, min($bboxRightPct, (float) $userSplit2));
+
+                $leftWidth = max(1, (int) round((($userSplit1 - $bboxLeftPct) / 100.0) * $effectiveCanvasWidth));
+                $rightWidth = max(1, (int) round((($bboxRightPct - $userSplit2) / 100.0) * $effectiveCanvasWidth));
+                $middleWidth = max(1, (int) round((($userSplit2 - $userSplit1) / 100.0) * $effectiveCanvasWidth));
+
+                $bboxLeftPx = (int) round(($bboxLeftPct / 100.0) * $effectiveCanvasWidth);
+                $bboxRightPx = (int) round(($bboxRightPct / 100.0) * $effectiveCanvasWidth);
 
                 // Already-trimmed PNGs sit at their natural heights; the
                 // tallest wins, capped at MAX_STYLE_HEIGHT so an oversized
@@ -206,6 +225,12 @@ class ThemeImageSlicer
                     )),
                 ));
             } else {
+                // First-pass flow: no bbox math (cuts are already aligned
+                // to the source artwork inside `splitToTempPngs`), so the
+                // slots run canvas-edge-to-canvas-edge for backwards
+                // compatibility with pre-bbox themes.
+                $bboxLeftPx = 0;
+                $bboxRightPx = $effectiveCanvasWidth;
                 // First-pass flow proportional allocation, keyed off the
                 // ORIGINAL (pre-trim) split widths. Cuts at 20 / 80 produce
                 // slots at 20% / 60% / 20% of the canvas width regardless
@@ -281,9 +306,11 @@ class ThemeImageSlicer
             $rightVisibleSrc = max(1, $rightBounds['right'] - $rightBounds['left'] + 1);
             $rightVisibleXInSlot = $rightBounds['left'] * $rightScale;
 
-            $titleCanvasX = $leftFit[2] + $leftVisibleXInSlot;
+            $titleCanvasX = $bboxLeftPx + $leftFit[2] + $leftVisibleXInSlot;
             $titleCanvasWidth = $leftVisibleSrc * $leftScale;
-            $endCanvasX = $effectiveCanvasWidth - $rightWidth + $rightFit[2] + $rightVisibleXInSlot;
+            // End canvas X anchors backwards from the bbox right edge (or
+            // the canvas right edge on the first-pass flow).
+            $endCanvasX = $bboxRightPx - $rightWidth + $rightFit[2] + $rightVisibleXInSlot;
             $endCanvasWidth = $rightVisibleSrc * $rightScale;
 
             $metrics = [
@@ -315,12 +342,16 @@ class ThemeImageSlicer
                 // centering offset via $leftFit[2] etc. so the parts stay
                 // centered within their slot WIDTHS; we just ignore its
                 // partY and pin everything to y=0.
-                $this->blitResized($canvas, $leftImg, $leftFit[2], 0, $leftFit[0], $leftFit[1]);
-                $this->blitResized($canvas, $middleImg, $leftWidth + $middleFit[2], 0, $middleFit[0], $middleFit[1]);
+                // Slots are anchored inside the bbox range, not at the
+                // canvas edges, so artwork sits where the designer
+                // dragged the handles and `dynamic_content_stretch`
+                // collapses the end slot cleanly to the bbox right edge.
+                $this->blitResized($canvas, $leftImg, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
+                $this->blitResized($canvas, $middleImg, $bboxLeftPx + $leftWidth + $middleFit[2], 0, $middleFit[0], $middleFit[1]);
                 $this->blitResized(
                     $canvas,
                     $rightImg,
-                    $leftWidth + $middleWidth + $rightFit[2],
+                    $bboxRightPx - $rightWidth + $rightFit[2],
                     0,
                     $rightFit[0],
                     $rightFit[1],
