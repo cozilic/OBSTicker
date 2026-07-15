@@ -1531,13 +1531,16 @@ export default function TickerTheme() {
                                 {sourceUrl !== null && (
                                     <div
                                         ref={surfaceRef}
-                                        style={
-                                            naturalDims !== null
+                                        style={{
+                                            ...(naturalDims !== null
                                                 ? {
                                                       aspectRatio: `${naturalDims.width} / ${naturalDims.height}`,
                                                   }
-                                                : undefined
-                                        }
+                                                : {}),
+                                            ['--zoom' as string]: zoom,
+                                            ['--panX' as string]: `${panX}px`,
+                                            ['--panY' as string]: `${panY}px`,
+                                        }}
                                         onPointerDown={startPan}
                                         onPointerMove={movePan}
                                         onPointerUp={endPan}
@@ -2244,8 +2247,10 @@ function VerticalHandle({
             onPointerUp={end}
             onPointerCancel={end}
             onKeyDown={keyDrag}
-            style={{ left: `${percentage}%` }}
-            className="group absolute top-0 z-10 flex h-full w-6 -translate-x-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+            style={{
+                left: `clamp(0px, calc(50% + (${percentage}% - 50%) * var(--zoom) + var(--panX, 0px)), calc(100% - 1.5rem))`,
+            }}
+            className="group absolute top-0 z-10 flex h-full w-6 -translate-x-1/2 cursor-ew-resize touch-none pointer-events-auto items-center justify-center rounded-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         >
             <HandleColor which={which} />
             <HandleBadge label={`${percentage.toFixed(1)}%`} position="right" />
@@ -2290,10 +2295,10 @@ function LabelEdgeHandle({
             onPointerCancel={end}
             onKeyDown={keyDrag}
             style={{
-                left: `${percentageX}%`,
-                top: `${percentageY}%`,
+                left: `clamp(0px, calc(50% + (${percentageX}% - 50%) * var(--zoom) + var(--panX, 0px)), calc(100% - 1.75rem))`,
+                top: `clamp(0px, calc(50% + (${percentageY}% - 50%) * var(--zoom) + var(--panY, 0px)), calc(100% - 1.75rem))`,
             }}
-            className={`absolute z-[2] flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-md border-2 border-rose-400 bg-background/85 text-[10px] font-bold text-rose-500 shadow-sm transition-shadow outline-none select-none ${cursorClass} hover:bg-rose-50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-rose-400`}
+            className={`absolute z-[2] flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none pointer-events-auto items-center justify-center rounded-md border-2 border-rose-400 bg-background/85 text-[10px] font-bold text-rose-500 shadow-sm transition-shadow outline-none select-none ${cursorClass} hover:bg-rose-50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-rose-400`}
         >
             <span aria-hidden="true">{isVertical ? '↔' : '↕'}</span>
         </div>
@@ -2326,8 +2331,10 @@ function HorizontalHandle({
             onPointerUp={end}
             onPointerCancel={end}
             onKeyDown={keyDrag}
-            style={{ top: `${percentage}%` }}
-            className="group absolute right-0 left-0 z-10 flex h-6 -translate-y-1/2 cursor-ns-resize touch-none items-center justify-center rounded-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+            style={{
+                top: `clamp(0px, calc(50% + (${percentage}% - 50%) * var(--zoom) + var(--panY, 0px)), calc(100% - 1.5rem))`,
+            }}
+            className="group absolute right-0 left-0 z-10 flex h-6 -translate-y-1/2 cursor-ns-resize touch-none pointer-events-auto items-center justify-center rounded-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         >
             <HandleColor which={which} />
             <HandleBadge
