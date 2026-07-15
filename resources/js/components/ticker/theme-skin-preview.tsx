@@ -407,16 +407,48 @@ export default function ThemeSkinPreview({
     const labelBox = projectLabelBox(themeMeta);
     const slot = viewportSlotStyle(themeMeta);
 
+    // Full-canvas shell height tracks the recompiled PNG's vertical
+    // extent when the theme's meta.json is loaded, so the band
+    // frames the painted strip exactly — no top/bottom crop.
+    // Mirrors the shellHeight branch in resources/js/pages/ticker/
+    // show.tsx. dyn2 (top_pct=15.87, bottom_pct=23.67) produces a
+    // PNG of `bottom_pct − top_pct` percent of PREVIEW_CANVAS.height
+    // (~84px on a 1080p design); the previous hardcoded `6%` (~65px)
+    // made `backgroundSize: 100% auto` overflow and crop ~9px off
+    // each end. Themes without meta.json (legacy / a no-bbox skin)
+    // keep the original 6% so the bar still renders at a sensible
+    // height. Source-natural vertical range is bounded to
+    // [32, 250]px so abnormally thin or fat bboxes can't blow the
+    // container up.
+    const fullCanvasShellHeight = themeMeta !== null
+        ? clamp(
+            Math.round(
+                PREVIEW_CANVAS.height *
+                    (Math.max(
+                        0,
+                        themeMeta.bottom_pct - themeMeta.top_pct,
+                    ) /
+                        100),
+            ),
+            32,
+            250,
+        )
+        : Math.round(PREVIEW_CANVAS.height * 0.06);
+
     const shellStyle: CSSProperties = {
         backgroundImage: `url("${imageUrl}")`,
         backgroundSize: '100% auto',
         backgroundRepeat: 'no-repeat',
-        // Anchor to the engineer's slot line (52% from the top in
-        // ticker/show.tsx). Themes whose stamp isn't vertically
-        // centered in the canvas will end up shifted slightly, which
-        // matches what audiences see live in OBS.
-        backgroundPosition: 'center 52%',
-        height: '6%',
+        // Anchor the strip at the bottom of the shell so the PNG's
+        // painted band sits flush with the container's bottom edge
+        // instead of landing at the lossy `center 52%` offset that
+        // paired with `100% auto` to crop the PNG's top and bottom.
+        // With the dynamic height above matching the PNG's natural
+        // height, this floor alignment is a no-op visually but
+        // stays correct when the source happens to be shorter than
+        // the canvas (the empty region then sits above the strip).
+        backgroundPosition: 'center bottom',
+        height: `${fullCanvasShellHeight}px`,
     };
 
     // Compact mode: the entire preview IS the strip. Scale the
