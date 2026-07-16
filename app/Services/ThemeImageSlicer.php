@@ -102,23 +102,26 @@ class ThemeImageSlicer
         ?array $splitPercentages = null,
         ?float $leftPct = null,
         ?float $rightPct = null,        // Content-Aware flag — when true, the recompile/slice pass
-        // preserves title.png at the LEFT edge of the canvas and
-        // end.png at the RIGHT edge of the canvas (CONTAIN-fit into
-        // their respective $leftWidth/$rightWidth slots — same
-        // geometry as the unflagged 3-blit path), and tiles
-        // content.png:
-        //   (a) alpha-trims content.png to its visible opaque
-        //       sub-rectangle so any transparent padding the
-        //       designer baked into the recorded content slice
-        //       does not show up as ghost-edges at the seam of
-        //       every tile, and
-        //   (b) tiles the trimmed artwork horizontally across
-        //       the middle region (between the title slot and
-        //       the end slot) so the design reads as
-        //       `title -> content -> ... -> content -> end`,
-        //       every tile sharing the same aspect preserved
-        //       through trailing-tile clipping at both src and
-        //       dst.
+        // alpha-trims ALL THREE parts (title.png, content.png,
+        // end.png) to their visible opaque sub-rectangles and
+        // produces a single seamless pattern fill that spans the
+        // FULL canvas width:
+        //   (a) content.png tiles horizontally across $leftWidth
+        //       to $effectiveCanvasWidth - $rightWidth so the
+        //       design reads as `title -> content -> ... -> content
+        //       -> end` and there is no large transparent margin
+        //       outside a narrow 2D bbox — bbox is a source-design
+        //       hint, not an output constraint, and the user's
+        //       recorded split_1/split_2 control the slot widths as
+        //       fractions of the CANVAS width under the flag.
+        //   (b) title.png is right-anchored inside the title slot
+        //       ($leftWidth -> 0 island) so its visible artwork's
+        //       right edge touches the content tile pattern
+        //       seamlessly.
+        //   (c) end.png is left-anchored inside the end slot so its
+        //       visible artwork's left edge touches the content
+        //       tile pattern seamlessly — content tiles NEVER bleed
+        //       past the end.png position.
         //
         // The tile's canvas-height is determined by the trimmed
         // content's natural height (capped at MAX_STYLE_HEIGHT and
@@ -278,9 +281,10 @@ class ThemeImageSlicer
                 // recompile's mtime-based cache
                 // TickerStyleRepository::compileThemes() additionally
                 // busts on the strategy-named
-                // `_compiled_under_dynamic_stretch_seamless_extend`
+                // `_compiled_under_dynamic_stretch_canvas_wide_alpha_trim`
                 // marker we write into compiled meta.json below —
                 // legacy metas (including those carrying the older
+                // `_compiled_under_dynamic_stretch_seamless_extend`,
                 // `_compiled_under_dynamic_stretch_alpha_trim_repeat_tile`,
                 // `_compiled_under_dynamic_stretch_single_blit`, and
                 // bilateral-cut-stage strategies'
@@ -492,27 +496,36 @@ class ThemeImageSlicer
                 // dragged the handles and `dynamic_content_stretch`
                 // collapses the end slot cleanly to the bbox right edge.
                 if ($dynamicContentStretch) {
-                    // Seamless-extend mode. title.png is preserved
-                    // at the LEFT edge of the canvas (CONTAIN-fit into
-                    // its $leftWidth slot — same geometry as the
-                    // unflagged 3-blit path), end.png is preserved at
-                    // the RIGHT edge of the canvas (CONTAIN-fit into
-                    // its $rightWidth slot), and content.png is
-                    // alpha-trimmed + tiled horizontally across the
-                    // middle region so the design reads as a single
-                    // seamless `title -> content -> ... -> content
-                    // -> end` pattern fill. Content is blitted FIRST
-                    // so title/end CONTAIN-padded transparent gutters
-                    // overlay the tile pattern cleanly at the edges.
+                    // Canvas-wide seamless-extend mode. The user's
+                    // narrow 2D bbox is treated as a SOURCE-design
+                    // hint rather than an OUTPUT constraint: all
+                    // three parts are alpha-trimmed to their visible
+                    // opaque sub-rectangles, then:
+                    //   (i)  content.png tiles across the middle
+                    //        region of the canvas between title slot
+                    //        and end slot ($leftWidth .. $effCanvasW
+                    //        - $rightWidth),
+                    //   (ii) title.png is right-anchored inside the
+                    //        title slot so its visible right edge
+                    //        touches the first content tile seam,
+                    //   (iii) end.png is left-anchored inside the
+                    //        end slot so its visible left edge
+                    //        touches the last content tile seam.
+                    // The user explicitly stated content MUST lie
+                    // before end (not straddle through end's slot),
+                    // and these three layers guarantee that — end's
+                    // slot is reserved for end.png only.
                     //
-                    // title.png / end.png were produced by the cut
-                    // stage (sliceFromSingle -> splitToTempPngs) and
-                    // were also written to disk by the commit block
-                    // earlier in this method, so re-edits + flag
-                    // toggles keep them.
+                    // ALL THREE inputs (leftImg/rightImg/middleImg)
+                    // are produced by the cut stage
+                    // (sliceFromSingle -> splitToTempPngs) and the
+                    // original ungrown PNGs are also written to disk
+                    // by the commit block earlier in this method, so
+                    // re-edits + flag toggles keep the source PNGs.
+
+                    // Alpha-trim content.png for clean tile seams.
                     $tileSource = $middleImg;
                     $tileIsCloned = false;
-
                     $midSrcW = imagesx($middleImg);
                     $midSrcH = imagesy($middleImg);
                     if (
@@ -528,13 +541,6 @@ class ThemeImageSlicer
                             'height' => max(1, $middleBounds['bottom'] - $middleBounds['top'] + 1),
                         ]);
                         if ($cropped instanceof GdImage) {
-                            // imagecrop() returns a fresh GdImage
-                            // that does not inherit the source's alpha
-                            // state; re-pin the flags so the trimmed
-                            // artwork lands in the canvas with its
-                            // transparent padding intact (otherwise
-                            // the seam between adjacent tiles shows a
-                            // hard opaque edge).
                             imagealphablending($cropped, false);
                             imagesavealpha($cropped, true);
                             $tileSource = $cropped;
@@ -542,20 +548,69 @@ class ThemeImageSlicer
                         }
                     }
 
+                    // Alpha-trim title.png so its visible artwork
+                    // does not have transparent gutters that would
+                    // expose the content tile beneath when CONTAIN-
+                    // fitted into the title slot.
+                    $leftSource = $leftImg;
+                    $leftIsCloned = false;
+                    $leftSrcWInner = imagesx($leftImg);
+                    $leftSrcHInner = imagesy($leftImg);
+                    if (
+                        $leftBounds['left'] > 0
+                        || $leftBounds['top'] > 0
+                        || $leftBounds['right'] < $leftSrcWInner - 1
+                        || $leftBounds['bottom'] < $leftSrcHInner - 1
+                    ) {
+                        $leftCropped = imagecrop($leftImg, [
+                            'x' => $leftBounds['left'],
+                            'y' => $leftBounds['top'],
+                            'width' => max(1, $leftBounds['right'] - $leftBounds['left'] + 1),
+                            'height' => max(1, $leftBounds['bottom'] - $leftBounds['top'] + 1),
+                        ]);
+                        if ($leftCropped instanceof GdImage) {
+                            imagealphablending($leftCropped, false);
+                            imagesavealpha($leftCropped, true);
+                            $leftSource = $leftCropped;
+                            $leftIsCloned = true;
+                        }
+                    }
+
+                    // Alpha-trim end.png for the same reason.
+                    $rightSource = $rightImg;
+                    $rightIsCloned = false;
+                    $rightSrcWInner = imagesx($rightImg);
+                    $rightSrcHInner = imagesy($rightImg);
+                    if (
+                        $rightBounds['left'] > 0
+                        || $rightBounds['top'] > 0
+                        || $rightBounds['right'] < $rightSrcWInner - 1
+                        || $rightBounds['bottom'] < $rightSrcHInner - 1
+                    ) {
+                        $rightCropped = imagecrop($rightImg, [
+                            'x' => $rightBounds['left'],
+                            'y' => $rightBounds['top'],
+                            'width' => max(1, $rightBounds['right'] - $rightBounds['left'] + 1),
+                            'height' => max(1, $rightBounds['bottom'] - $rightBounds['top'] + 1),
+                        ]);
+                        if ($rightCropped instanceof GdImage) {
+                            imagealphablending($rightCropped, false);
+                            imagesavealpha($rightCropped, true);
+                            $rightSource = $rightCropped;
+                            $rightIsCloned = true;
+                        }
+                    }
+
+                    // Tile content across $leftWidth..canvas-$rightWidth
+                    // (canvas-WIDE, ignoring the user's narrow bbox for
+                    // output positioning — bbox is a source-design hint
+                    // only).
                     $tileSrcW = max(1, imagesx($tileSource));
                     $tileSrcH = max(1, imagesy($tileSource));
-                    // Tile width scaled to canvas height with the
-                    // tile's natural aspect preserved — every tile
-                    // is identical at this aspect. Trailing partial
-                    // tile's source is clipped proportionally below
-                    // so it doesn't squash against the smaller
-                    // destination width (the visible artwork's
-                    // aspect stays seamless against the previous
-                    // complete tile).
                     $scaledTileW = max(1, (int) round($tileSrcW * ($height / $tileSrcH)));
 
-                    $tileStartX = $bboxLeftPx + $leftWidth;
-                    $tileEndX = max($tileStartX, $bboxRightPx - $rightWidth);
+                    $tileStartX = $leftWidth;
+                    $tileEndX = max($tileStartX, $effectiveCanvasWidth - $rightWidth);
                     $tileX = $tileStartX;
                     while ($tileX < $tileEndX) {
                         $drawW = min($scaledTileW, $tileEndX - $tileX);
@@ -578,29 +633,49 @@ class ThemeImageSlicer
                         $tileX += $scaledTileW;
                     }
 
+                    // Re-fit title/end to their slots with the
+                    // alpha-trimmed source dimensions so the slot
+                    // dimensions reflect the visible artwork's
+                    // aspect (not the original source's full bbox).
+                    $trimmedLeftFit = $this->fitInBox(
+                        $leftWidth,
+                        $height,
+                        max(1, imagesx($leftSource)),
+                        max(1, imagesy($leftSource)),
+                        'contain',
+                    );
+                    // Right-anchor inside the title slot so the title's
+                    // visible right edge meets the first content tile
+                    // flush (no CONTAIN-padding gap exposes the
+                    // content beneath).
+                    $leftFitW = $trimmedLeftFit[0];
+                    $leftFitH = $trimmedLeftFit[1];
+                    $leftBlitX = $leftWidth - $leftFitW;
+
+                    // End: left-anchor inside end slot.
+                    $trimmedRightFit = $this->fitInBox(
+                        $rightWidth,
+                        $height,
+                        max(1, imagesx($rightSource)),
+                        max(1, imagesy($rightSource)),
+                        'contain',
+                    );
+                    $rightFitW = $trimmedRightFit[0];
+                    $rightFitH = $trimmedRightFit[1];
+                    $rightBlitX = $effectiveCanvasWidth - $rightWidth;
+
+                    $this->blitResized($canvas, $leftSource, $leftBlitX, 0, $leftFitW, $leftFitH);
+                    $this->blitResized($canvas, $rightSource, $rightBlitX, 0, $rightFitW, $rightFitH);
+
                     if ($tileIsCloned) {
                         imagedestroy($tileSource);
                     }
-
-                    // Layer title + end on top so their CONTAIN-
-                    // padded transparent gutters overlay the middle
-                    // tile pattern cleanly at the edges.
-                    $this->blitResized(
-                        $canvas,
-                        $leftImg,
-                        $bboxLeftPx + $leftFit[2],
-                        0,
-                        $leftFit[0],
-                        $leftFit[1],
-                    );
-                    $this->blitResized(
-                        $canvas,
-                        $rightImg,
-                        $bboxRightPx - $rightWidth + $rightFit[2],
-                        0,
-                        $rightFit[0],
-                        $rightFit[1],
-                    );
+                    if ($leftIsCloned) {
+                        imagedestroy($leftSource);
+                    }
+                    if ($rightIsCloned) {
+                        imagedestroy($rightSource);
+                    }
                 } else {
                     $this->blitResized($canvas, $leftImg, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
                     $this->blitResized($canvas, $middleImg, $bboxLeftPx + $leftWidth + $middleFit[2], 0, $middleFit[0], $middleFit[1]);
@@ -654,9 +729,9 @@ class ThemeImageSlicer
                 // right-only-OFF-shrunken PNGs in place after
                 // the artist flips the flag back on.
                 if ($dynamicContentStretch) {
-                    $meta['_compiled_under_dynamic_stretch_seamless_extend'] = true;
+                    $meta['_compiled_under_dynamic_stretch_canvas_wide_alpha_trim'] = true;
                 } else {
-                    unset($meta['_compiled_under_dynamic_stretch_seamless_extend']);
+                    unset($meta['_compiled_under_dynamic_stretch_canvas_wide_alpha_trim']);
                 }
 
                 File::ensureDirectoryExists(dirname($outputJson));
