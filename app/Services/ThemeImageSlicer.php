@@ -101,24 +101,23 @@ class ThemeImageSlicer
         ?string $outputJson = null, ?string $originalJson = null,
         ?array $splitPercentages = null,
         ?float $leftPct = null,
-        ?float $rightPct = null,
-        // Content-Aware flag — when true, the recompile/slice pass:
-        //   (a) snaps BOTH bounding-box edges and BOTH split cuts
-        //       to the canvas edges so the content slot spans
-        //       0–100% of the canvas (title/end slots collapse to
-        //       1 px under the slot-math `max(1, …)` floor);
-        //   (b) DROPS the title/end crops from the rendered PNG
-        //       entirely in the $outputPng blit, single-blitting
-        //       content.png seam-free across the full canvas —
-        //       the artist's content-slice artwork is the ONLY
-        //       thing that reaches the compiled strip.
+        ?float $rightPct = null,        // Content-Aware flag — when true, the recompile/slice pass
+        // DROPS the title/end crops from the rendered PNG entirely
+        // in the $outputPng blit, single-blitting content.png
+        // seam-free across the full canvas — the artist's content-
+        // slice artwork is the ONLY thing that reaches the compiled
+        // strip. The user's recorded split_1/split_2/left_pct/right_pct
+        // are honored both at cut time (sliceFromSingle passes them
+        // through to splitToTempPngs) and in slot math, so
+        // content.png contains only the region between split_1
+        // and split_2 — not the whole source. Earlier revisions
+        // tried snapping bbox edges and splits to 0/100 at runtime;
+        // that pulled artwork the artist designed outside their
+        // recorded cuts into the visible strip after the canvas-
+        // wide stretch (the source's title/end decorations rode
+        // along inside the middle slot).
         //
-        // The flag is runtime-only ({self::sliceFromSingle()} forwards
-        // the same flag, but its cut stage does NOT override
-        // split_1/split_2 — content.png is faithful to the user's
-        // recorded splits, otherwise artwork drawn outside that
-        // region would bleed into the visible strip after the
-        // canvas-wide stretch). Source meta.json keeps the user's
+        // The flag is runtime-only. Source meta.json keeps the user's
         // recorded split_1/split_2/left_pct/right_pct so re-editing
         // the theme in the builder restores the original geometry
         // when the flag is untoggled. Defaults to false to preserve
@@ -232,31 +231,29 @@ class ThemeImageSlicer
                 $userSplit1 = max($bboxLeftPct + 0.01, min($bboxRightPct - 0.01, (float) $userSplit1));
                 $userSplit2 = max($userSplit1 + 0.01, min($bboxRightPct, (float) $userSplit2));
 
-                // Bilateral override: when the theme builder's
-                // dynamic content awareness toggle is on, snap BOTH
-                // edges of the bounding box AND BOTH cuts to the
-                // canvas edges for the recompile/slice pass only.
-                // The content slot ends up spanning 0–100% of the
-                // canvas; the title and end slots collapse to the
-                // 1px floor enforced by max(1, …) below. The
-                // output blit further down branches on the same
-                // flag and DROPS the title/end crops from the
-                // canvas entirely — only content.png is composited,
-                // stretched seam-free across the full canvas.
-                // Combined: the artist sees ONLY their content-
-                // slice artwork stretched to fill the ticker,
-                // regardless of where they originally positioned
-                // the title/end stamps in the source.
+                // runtime-only flag: bbox/splits are NOT mutated here.
+                // Earlier bilateral revisions (slot-math override +
+                // cut-stage override) tried snapping user splits
+                // to 0/100 so middle.png encompassed the whole
+                // source — that pulled artwork the artist designed
+                // outside their recorded cuts into the visible
+                // strip. We now keep the user's recorded splits
+                // both at cut time and in slot math; the
+                // single-blit content blit further down still
+                // DROPS title/end.png from the rendered output.
+                // The artist sees ONLY the content slice (their
+                // recorded split_1..split_2 region) stretched
+                // seam-free across the full canvas.
                 //
                 // Source meta.json keeps the user's recorded
                 // split_1 / split_2 / left_pct / right_pct for
                 // full re-edit-ability in the theme builder when
-                // they later untoggle the flag. Untoggling reruns
-                // the recompile through the legacy code path and
-                // restores the original bbox / slot geometry.
+                // they later untoggle the flag (untoggling reruns
+                // the recompile through the normal 3-slot path and
+                // restores the original bbox / slot geometry).
                 //
-                // CACHE NOTE: the override is runtime-only — meta.json
-                // is not mutated, so the recompile's mtime-based cache
+                // CACHE NOTE: meta.json is not mutated, so the
+                // recompile's mtime-based cache
                 // TickerStyleRepository::compileThemes() additionally
                 // busts on the strategy-named
                 // `_compiled_under_dynamic_stretch_single_blit`
@@ -269,12 +266,6 @@ class ThemeImageSlicer
                 // new strategy. Marker key is strategy-named so a
                 // bump forces a clean rebuild across all dynamic-
                 // stretched themes.
-                if ($dynamicContentStretch) {
-                    $bboxLeftPct = 0.0;
-                    $bboxRightPct = 100.0;
-                    $userSplit1 = 0.0;
-                    $userSplit2 = 100.0;
-                }
 
                 // Compute the bbox pixel anchors BEFORE the slot widths so
                 // the residue math below can reference them without PHP
