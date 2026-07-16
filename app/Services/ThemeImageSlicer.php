@@ -102,21 +102,23 @@ class ThemeImageSlicer
         ?array $splitPercentages = null,
         ?float $leftPct = null,
         ?float $rightPct = null,        // Content-Aware flag — when true, the recompile/slice pass
-        // (a) alpha-trims content.png to its visible opaque
-        //     sub-rectangle (skipping any transparent padding the
-        //     designer baked into the recorded content slice —
-        //     otherwise that padding would stretch into the
-        //     visible strip after tiling, producing blurred
-        //     ghost-edges at the seam of every tile), and
-        // (b) tiles the trimmed artwork horizontally across the
-        //     full canvas — every tile is identical and the
-        //     trailing tile is naturally clipped to the canvas
-        //     right edge by imagecopyresampled, so the design
-        //     reads as a single seamless pattern fill rather than
-        //     a single stretched image. title.png and end.png are
-        //     still written to disk by the commit block (so
-        //     re-edits + flag toggles keep them) but DROPped from
-        //     the rendered PNG.
+        // preserves title.png at the LEFT edge of the canvas and
+        // end.png at the RIGHT edge of the canvas (CONTAIN-fit into
+        // their respective $leftWidth/$rightWidth slots — same
+        // geometry as the unflagged 3-blit path), and tiles
+        // content.png:
+        //   (a) alpha-trims content.png to its visible opaque
+        //       sub-rectangle so any transparent padding the
+        //       designer baked into the recorded content slice
+        //       does not show up as ghost-edges at the seam of
+        //       every tile, and
+        //   (b) tiles the trimmed artwork horizontally across
+        //       the middle region (between the title slot and
+        //       the end slot) so the design reads as
+        //       `title -> content -> ... -> content -> end`,
+        //       every tile sharing the same aspect preserved
+        //       through trailing-tile clipping at both src and
+        //       dst.
         //
         // The tile's canvas-height is determined by the trimmed
         // content's natural height (capped at MAX_STYLE_HEIGHT and
@@ -276,10 +278,11 @@ class ThemeImageSlicer
                 // recompile's mtime-based cache
                 // TickerStyleRepository::compileThemes() additionally
                 // busts on the strategy-named
-                // `_compiled_under_dynamic_stretch_alpha_trim_repeat_tile`
+                // `_compiled_under_dynamic_stretch_seamless_extend`
                 // marker we write into compiled meta.json below —
                 // legacy metas (including those carrying the older
-                // `_compiled_under_dynamic_stretch_single_blit` and
+                // `_compiled_under_dynamic_stretch_alpha_trim_repeat_tile`,
+                // `_compiled_under_dynamic_stretch_single_blit`, and
                 // bilateral-cut-stage strategies'
                 // `_compiled_under_dynamic_override` markers) lack
                 // the current strategy's key and are forced to
@@ -318,26 +321,20 @@ class ThemeImageSlicer
                 // Already-trimmed PNGs sit at their natural heights; the
                 // tallest wins, capped at MAX_STYLE_HEIGHT so an oversized
                 // accent cannot stretch the whole ticker, with the 32px
-                // floor still applying for very thin sources. Under
-                // dynamic_content_stretch the canvas is driven by the
-                // CONTENT SLICE's trimmed natural height — not the legacy
-                // max-of-3 — because title/end are DROPped from the
-                // rendered output under the flag and any overshoot from
-                // their heights would otherwise over-stretch the tile
-                // vertically into the user's design.
-                if ($dynamicContentStretch) {
-                    $tileHeight = max(1, $middleBounds['bottom'] - $middleBounds['top'] + 1);
-                    $height = max(32, min(self::MAX_STYLE_HEIGHT, $tileHeight));
-                } else {
-                    $height = max(32, min(
-                        self::MAX_STYLE_HEIGHT,
-                        (int) round(max(
-                            imagesy($leftImg),
-                            imagesy($middleImg),
-                            imagesy($rightImg),
-                        )),
-                    ));
-                }
+                // floor still applying for very thin sources. The legacy
+                // max-of-3-parts rule applies under dynamic_content_stretch
+                // too — title and end are blitted (CONTAIN-fit into their
+                // slots) under the flag, so a tall hidden accent in either
+                // can drive the canvas height without getting vertically
+                // cropped.
+                $height = max(32, min(
+                    self::MAX_STYLE_HEIGHT,
+                    (int) round(max(
+                        imagesy($leftImg),
+                        imagesy($middleImg),
+                        imagesy($rightImg),
+                    )),
+                ));
             } else {
                 // Legacy 3-file fallback (no `$splitPercentages`):
                 // slot widths are derived from imagesx() of each cut
@@ -495,27 +492,24 @@ class ThemeImageSlicer
                 // dragged the handles and `dynamic_content_stretch`
                 // collapses the end slot cleanly to the bbox right edge.
                 if ($dynamicContentStretch) {
-                    // Repeat-tile mode. Alpha-trim content.png to its
-                    // visible opaque sub-rectangle (the artwork the
-                    // designer actually painted — any transparent
-                    // padding at edges inside the recorded content
-                    // slice is dropped) and tile the trimmed artwork
-                    // horizontally across the full canvas. Every
-                    // tile is identical so the design reads as a
-                    // single seamless pattern fill rather than a
-                    // stretched image, and the trailing tile is
-                    // naturally clipped to the canvas right edge by
-                    // imagecopyresampled — no horizontal pixel-
-                    // aspect distortion on the final visible bit.
+                    // Seamless-extend mode. title.png is preserved
+                    // at the LEFT edge of the canvas (CONTAIN-fit into
+                    // its $leftWidth slot — same geometry as the
+                    // unflagged 3-blit path), end.png is preserved at
+                    // the RIGHT edge of the canvas (CONTAIN-fit into
+                    // its $rightWidth slot), and content.png is
+                    // alpha-trimmed + tiled horizontally across the
+                    // middle region so the design reads as a single
+                    // seamless `title -> content -> ... -> content
+                    // -> end` pattern fill. Content is blitted FIRST
+                    // so title/end CONTAIN-padded transparent gutters
+                    // overlay the tile pattern cleanly at the edges.
                     //
-                    // title.png and end.png were produced by the cut
+                    // title.png / end.png were produced by the cut
                     // stage (sliceFromSingle -> splitToTempPngs) and
-                    // were written to disk by the commit block earlier
-                    // in this method (so re-edits + flag toggles keep
-                    // them), but they are DROPped from the rendered
-                    // PNG entirely under the flag — only the
-                    // content-slice artwork reaches the compiled
-                    // strip.
+                    // were also written to disk by the commit block
+                    // earlier in this method, so re-edits + flag
+                    // toggles keep them.
                     $tileSource = $middleImg;
                     $tileIsCloned = false;
 
@@ -534,12 +528,13 @@ class ThemeImageSlicer
                             'height' => max(1, $middleBounds['bottom'] - $middleBounds['top'] + 1),
                         ]);
                         if ($cropped instanceof GdImage) {
-                            // imagecrop() returns a fresh GdImage that
-                            // does not inherit the source's alpha state;
-                            // re-pin the flags so the trimmed artwork
-                            // lands in the canvas with its transparent
-                            // padding intact (otherwise the seam between
-                            // adjacent tiles shows a hard opaque edge).
+                            // imagecrop() returns a fresh GdImage
+                            // that does not inherit the source's alpha
+                            // state; re-pin the flags so the trimmed
+                            // artwork lands in the canvas with its
+                            // transparent padding intact (otherwise
+                            // the seam between adjacent tiles shows a
+                            // hard opaque edge).
                             imagealphablending($cropped, false);
                             imagesavealpha($cropped, true);
                             $tileSource = $cropped;
@@ -547,24 +542,65 @@ class ThemeImageSlicer
                         }
                     }
 
-                    $tileWidth = max(1, imagesx($tileSource));
-                    $tileHeightSrc = max(1, imagesy($tileSource));
-                    $xOffset = 0;
-                    while ($xOffset < $effectiveCanvasWidth) {
-                        $this->blitResized(
+                    $tileSrcW = max(1, imagesx($tileSource));
+                    $tileSrcH = max(1, imagesy($tileSource));
+                    // Tile width scaled to canvas height with the
+                    // tile's natural aspect preserved — every tile
+                    // is identical at this aspect. Trailing partial
+                    // tile's source is clipped proportionally below
+                    // so it doesn't squash against the smaller
+                    // destination width (the visible artwork's
+                    // aspect stays seamless against the previous
+                    // complete tile).
+                    $scaledTileW = max(1, (int) round($tileSrcW * ($height / $tileSrcH)));
+
+                    $tileStartX = $bboxLeftPx + $leftWidth;
+                    $tileEndX = max($tileStartX, $bboxRightPx - $rightWidth);
+                    $tileX = $tileStartX;
+                    while ($tileX < $tileEndX) {
+                        $drawW = min($scaledTileW, $tileEndX - $tileX);
+                        $isPartial = $drawW < $scaledTileW;
+                        $srcClipW = $isPartial
+                            ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
+                            : $tileSrcW;
+                        imagecopyresampled(
                             $canvas,
                             $tileSource,
-                            $xOffset,
+                            $tileX,
                             0,
-                            $tileWidth,
-                            $tileHeightSrc,
+                            0,
+                            0,
+                            $drawW,
+                            $height,
+                            $srcClipW,
+                            $tileSrcH,
                         );
-                        $xOffset += $tileWidth;
+                        $tileX += $scaledTileW;
                     }
 
                     if ($tileIsCloned) {
                         imagedestroy($tileSource);
                     }
+
+                    // Layer title + end on top so their CONTAIN-
+                    // padded transparent gutters overlay the middle
+                    // tile pattern cleanly at the edges.
+                    $this->blitResized(
+                        $canvas,
+                        $leftImg,
+                        $bboxLeftPx + $leftFit[2],
+                        0,
+                        $leftFit[0],
+                        $leftFit[1],
+                    );
+                    $this->blitResized(
+                        $canvas,
+                        $rightImg,
+                        $bboxRightPx - $rightWidth + $rightFit[2],
+                        0,
+                        $rightFit[0],
+                        $rightFit[1],
+                    );
                 } else {
                     $this->blitResized($canvas, $leftImg, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
                     $this->blitResized($canvas, $middleImg, $bboxLeftPx + $leftWidth + $middleFit[2], 0, $middleFit[0], $middleFit[1]);
@@ -618,9 +654,9 @@ class ThemeImageSlicer
                 // right-only-OFF-shrunken PNGs in place after
                 // the artist flips the flag back on.
                 if ($dynamicContentStretch) {
-                    $meta['_compiled_under_dynamic_stretch_alpha_trim_repeat_tile'] = true;
+                    $meta['_compiled_under_dynamic_stretch_seamless_extend'] = true;
                 } else {
-                    unset($meta['_compiled_under_dynamic_stretch_alpha_trim_repeat_tile']);
+                    unset($meta['_compiled_under_dynamic_stretch_seamless_extend']);
                 }
 
                 File::ensureDirectoryExists(dirname($outputJson));
