@@ -423,20 +423,26 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     } = {
         bottom: '0',
         height: `${shellHeight}px`,
-        // In non-chroma the body falls through to css/app.css's
-        // `.dark { --background: oklch(0.145 0 0) }` rule, so a
-        // transparent shell reveals a near-black backside wherever
-        // the compiled PNG's CONTAIN-fit slots leave transparent
-        // columns (typical at the content→end seam where the
-        // source's right-edge cut has a fade or the alpha-aware
-        // fit lands on transparency). The reported "black line"
-        // symptom is exactly that leak. Pin the shell opaque only
-        // when a skin is active AND we're not chroma-keying; keep
-        // chroma+skin transparent (OBS chroma-bleed) and
-        // chroma+non-skin at its original `'#0f172a'` dark slate
-        // via `chromaContentBackground`.
-        backgroundColor: useChromaKey && useTickerSkin
+        // Skin path: the compiled PNG carries the entire visible
+        // design — the shell stamp behind it is the OBS compositing
+        // layer, not another design surface. The body/html/#app
+        // chain is inline-forced to transparent by the effect below,
+        // so making the shell transparent lets OBS's browser-source
+        // alpha carry straight through to the scene without leaking
+        // a solid `background_color` block behind the PNG's
+        // transparent columns. The previous default `#111827` was
+        // exactly the "black box around the theme" symptom the user
+        // hit; chroma+skin was already transparent for the same
+        // reason, and subsumed into this single rule (chroma mode
+        // also paints the body with `chromaBackground`, so chroma
+        // color still bleeds through transparently here).
+        backgroundColor: useTickerSkin
             ? 'transparent'
+            // Non-skin path: the user-set `background_color` IS the
+            // visible design, not a compositing layer — keep it
+            // opaque. (`chromaContentBackground` resolves to a dark
+            // slate in non-skin + chroma and to `background_color`
+            // otherwise.)
             : chromaContentBackground,
         backgroundImage: tickerSkinUrl ? `url("${tickerSkinUrl}")` : undefined,
         // Anchor at the bottom so the strip art sits flush with the
@@ -516,22 +522,25 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
 
     const defaultSkinTickerViewportStyle: CSSProperties = useTickerSkin
         ? themeMeta !== null
-            ? // Viewport spans the CONTENT SLOT. When
-              // dynamic_content_stretch is on (theme-builder flag
-              // persisted in meta.json) the end region has zero
-              // width and content stretches all the way to the
-              // bounding-box right edge — we mirror that with
-              // right: 100 - right_pct — same effect as if split_2
-              // were equal to right_pct (which is exactly what the
-              // controller hard-clamps split_2 to on the server).
-              // Without the flag, the viewport stays [split_1,
-              // split_2] and the scrolling text wraps before the
-              // end stamp.
+            ? // When dynamic_content_stretch is on (theme-builder
+              // flag persisted in meta.json) the controller
+              // hard-clamps split_2 to right_pct on the server, so
+              // the end slot has zero painted width. The viewport
+              // therefore extends all the way to the canvas right
+              // edge ("screen minus title minus end") instead of
+              // stopping at the end-stamp slot — the artist's
+              // intent is a single rolling content stream that
+              // fills the empty space the bbox left behind. Without
+              // the flag the viewport stays [split_1, split_2] and
+              // the scrolling text wraps before the end stamp, the
+              // legacy "ticker in a finite center panel" look.
               {
                   top: 0,
                   bottom: 0,
                   left: `${themeMeta.split_1}%`,
-                  right: `${Math.max(0, 100 - themeMeta.split_2)}%`,
+                  right: themeMeta.dynamic_content_stretch === true
+                      ? '0%'
+                      : `${Math.max(0, 100 - themeMeta.split_2)}%`,
               }
             : {
                   top: 0,
@@ -597,6 +606,14 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                     label_width_pct?: unknown;
                     label_top_pct?: unknown;
                     label_height_pct?: unknown;
+                    // Round-trip flag toggled in the theme builder —
+                    // when true, the content stream stretches all
+                    // the way to the canvas right edge so the live
+                    // ticker viewport equals (screen − title − end)
+                    // instead of stopping at the end slot. Optional
+                    // so meta.json from themes predating this field
+                    // still parses with the bounded slot defaults.
+                    dynamic_content_stretch?: unknown;
                 };
 
                 if (
@@ -659,6 +676,10 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
                     label_height_pct:
                         typeof record.label_height_pct === 'number'
                             ? record.label_height_pct
+                            : undefined,
+                    dynamic_content_stretch:
+                        typeof record.dynamic_content_stretch === 'boolean'
+                            ? record.dynamic_content_stretch
                             : undefined,
                 });
             })

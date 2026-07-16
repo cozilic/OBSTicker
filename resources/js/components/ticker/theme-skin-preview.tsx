@@ -172,14 +172,17 @@ function viewportSlotStyle(themeMeta: ThemeMeta | null): {
         return { left: '13%', right: '5%' };
     }
 
-    // When dynamic_content_stretch is on, the content slot extends all
-    // the way to the bounding-box right edge and the end region has
-    // zero width. Mirrors ticker/show.tsx's `defaultSkinTickerViewportStyle`
-    // branch so the on-air rendering matches the preview.
+    // When dynamic_content_stretch is on, the controller hard-clamps
+    // split_2 to right_pct on the server, so the end slot has zero
+    // painted width. The viewport therefore extends all the way to
+    // the canvas right edge ("screen minus title minus end") instead
+    // of stopping at the bbox right — same as the on-air rendering
+    // in ticker/show.tsx's `defaultSkinTickerViewportStyle`, so the
+    // editor preview and the live ticker stay WYSIWYG in lock-step.
     if (themeMeta.dynamic_content_stretch === true) {
         return {
             left: `${themeMeta.split_1}%`,
-            right: `${Math.max(0, 100 - themeMeta.right_pct)}%`,
+            right: '0%',
         };
     }
 
