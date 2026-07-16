@@ -190,18 +190,6 @@ export default function TickerTheme() {
     // Commit metadata — persisted alongside the compiled theme on
     // submit.
     const [themeName, setThemeName] = useState<string>('');
-
-    // Probed natural aspect of the rendered strip PNG so the
-    // preview window below the editor can frame edge-to-edge
-    // instead of letterboxing into a fixed 4:1 box. The recompiled
-    // PNG the controller returns is already the painted strip
-    // cropped to the bbox vertical span (post-c643291) — typical
-    // bbox spans land anywhere from 1.7% (1920×32 ≈ 60:1) to 30%
-    // (1920×324 ≈ 6:1), so a fixed `aspect-[4/1]` would either
-    // crush the strip or leave huge top/bottom margins. `null`
-    // before the probe resolves → keep the `aspect-[4/1]`
-    // fallback so the first paint doesn't jump.
-    const [previewAspect, setPreviewAspect] = useState<number | null>(null);
     const [authorName, setAuthorName] = useState<string>(auth.user?.name ?? '');
     const [isCommitting, setIsCommitting] = useState<boolean>(false);
 
@@ -259,67 +247,6 @@ export default function TickerTheme() {
         },
         [],
     );
-
-    // Probe the preview PNG's natural aspect the moment
-    // previewUrl flips (file pick → first preview → every
-    // dragend). Mirrors the `compact` branch in
-    // resources/js/components/ticker/theme-skin-preview.tsx so
-    // both viewers agree on the strip's framing. Cleanup nulls
-    // out onload/onerror and zeroes probe.src so an in-flight
-    // decode can't resolve against a dead component after the
-    // effect's deps change (otherwise the next preview's probe
-    // could overwrite our state-of-the-art measurement with a
-    // measurement from the now-stale previous URL).
-    useEffect(() => {
-        if (typeof previewUrl !== 'string' || previewUrl === '') {
-            // No need to reset previewAspect here: the JSX hides
-            // the preview container entirely when previewUrl is
-            // empty ({previewUrl !== null && (...)}), so a stale
-            // previous aspect is never user-visible during the
-            // null window between handleFile[old → null] and the
-            // next previewUrl flip. Skipping the setState also
-            // sidesteps ESLint's
-            // react-hooks/set-state-in-effect warning (calling
-            // setState synchronously in a useEffect body is the
-            // pattern the rule was authored to catch).
-            return undefined;
-        }
-
-        const probe = new Image();
-
-        probe.onload = (): void => {
-            // WebKit/Blink expose naturalWidth / naturalHeight as
-            // `number` (always 0 pre-load or on zero-size images),
-            // so guarding on `> 0` alone is enough — mirrors the
-            // compact probe in
-            // resources/js/components/ticker/theme-skin-preview.tsx.
-            if (probe.naturalHeight > 0) {
-                setPreviewAspect(probe.naturalWidth / probe.naturalHeight);
-            }
-        };
-
-        probe.onerror = (): void => {
-            // Don't reset previewAspect on a transient decode
-            // failure: clearing it here would lock the
-            // previewUrl onto the `aspect-[4/1]` fallback even
-            // when we already have a good previous-good aspect
-            // for the SAME URL (e.g. network hiccup while the
-            // browser re-decodes the strip's PNG). Keeping the
-            // existing value is the right call — the strip
-            // hasn't changed, only the time the probe happened
-            // to fail. On a fresh URL (no prior aspect), the
-            // useState-init null means the fallback still
-            // applies until a future decode succeeds.
-        };
-
-        probe.src = previewUrl;
-
-        return (): void => {
-            probe.onload = null;
-            probe.onerror = null;
-            probe.src = '';
-        };
-    }, [previewUrl]);
 
     const clamp = (value: number, min: number, max: number): number =>
         Math.min(max, Math.max(min, value));
@@ -1988,47 +1915,42 @@ export default function TickerTheme() {
                                 )}
 
                                 {previewUrl !== null && (
-                                    // Frame the preview to match
-                                    // the strip's natural aspect
-                                    // once the probe resolves so
-                                    // the entire painted strip
-                                    // fills the window edge-to-
-                                    // edge (post-c643291 the PNG
-                                    // is already the strip, no
-                                    // letterboxing needed).
-                                    // While the probe is in
-                                    // flight we keep the original
-                                    // `aspect-[4/1]` fallback so
-                                    // the static layout doesn't
-                                    // jump on the first paint.
-                                    // `object-fill` (vs
-                                    // `object-cover`/
-                                    // `object-contain`) snaps
-                                    // edge-to-edge across the
-                                    // .toFixed(3) rounding
-                                    // boundary for any
-                                    // post-probe aspect.
-                                    <div
-                                        className={`w-full overflow-hidden rounded-lg border border-border/60 bg-muted/30${
-                                            previewAspect === null
-                                                ? ' aspect-[4/1]'
-                                                : ''
-                                        }`}
-                                        style={
-                                            previewAspect !== null
-                                                ? {
-                                                      aspectRatio:
-                                                          previewAspect.toFixed(
-                                                              3,
-                                                          ),
-                                                  }
-                                                : undefined
-                                        }
-                                    >
+                                    // Always render the editor's
+                                    // preview in a 16:9 canvas-ticker
+                                    // aspect with object-cover so the
+                                    // strip ALWAYS fills the preview
+                                    // window edge-to-edge in height,
+                                    // no matter what the user drops in
+                                    // or how the bbox crop landed. This
+                                    // supersedes the previous probe-
+                                    // driven dynamic-aspect approach,
+                                    // which left the user staring at a
+                                    // 22-25 px-tall sliver (a 1920×60
+                                    // strip at 700 px container width
+                                    // reads as "not zoomed in / not
+                                    // covering the window" even though
+                                    // it is technically filling edge-to-
+                                    // edge) and locked onto a 4:1
+                                    // letterbox when the throwaway
+                                    // `new Image()` probe silently
+                                    // failed on the multi-MB base64
+                                    // data URL. object-cover instead
+                                    // scales the strip up to fill the
+                                    // container's height while
+                                    // preserving its natural aspect
+                                    // ratio — horizontally cropping the
+                                    // segment that doesn't fit, which is
+                                    // exactly the broadcast framing a
+                                    // ticker would land in. The bg-
+                                    // muted/30 + bg-checker combinations
+                                    // keep transparent PNG padding inside
+                                    // the strip readable so the artist
+                                    // can still see alpha-aware gaps.
+                                    <div className="aspect-video w-full overflow-hidden rounded-lg border border-border/60 bg-muted/30">
                                         <img
                                             src={previewUrl}
                                             alt={t('themePreview')}
-                                            className="bg-checker block h-full w-full object-fill"
+                                            className="bg-checker block h-full w-full object-cover"
                                         />
                                     </div>
                                 )}
