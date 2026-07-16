@@ -627,6 +627,17 @@ class TickerStyleRepository
                             $splitPercentages,
                             $bboxLeftPct,
                             $bboxRightPct,
+                            // Tail-fill on the recompile path: when the
+                            // user toggled dynamic_content_stretch=true
+                            // in their source meta.json, force the
+                            // recompile to paint the strip all the way
+                            // to canvas right (see ThemeImageSlicer
+                            // ::slice() for the math override). The
+                            // runtime-only override keeps the source
+                            // meta's split_2 / right_pct intact for
+                            // re-edit-ability when the flag is toggled
+                            // off in the builder.
+                            (bool) ($themeMeta['dynamic_content_stretch'] ?? false),
                         );
 
                         // Persist the visible-stamp metrics the slicer

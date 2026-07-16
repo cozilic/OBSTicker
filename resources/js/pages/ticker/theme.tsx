@@ -1357,11 +1357,31 @@ export default function TickerTheme() {
         requestPreviewRef.current = requestPreview;
     }, [requestPreview]);
 
+    // Auto-fire the preview whenever a relevant state change happens:
+    // either the user picked a fresh source image OR they flipped the
+    // dynamic-content-awareness checkbox. Without the second branch
+    // the toggle looks "dead" because the user has to scroll back to
+    // the theme preview card and click "Preview theme" themselves to
+    // see the recompiled strip PNG snap wider — that's the exact
+    // "nothing happens" symptom this consolidated effect removes. The
+    // requestPreviewRef ref indirection backs both call sites with a
+    // single source-of-truth requestPreview closure, and reading
+    // .current() inside the effect captures the
+    // dynamicContentStretch-closed-over value at call time rather
+    // than at effect-render time so the toggle's fresh closure is
+    // what reaches the controller on the immediate re-fire. ESLint's
+    // exhaustive-deps rule is satisfied: both deps are primitive
+    // state values (no derived redraw triggers), and the ref object
+    // is stable across renders. The early-return on sourceFile=null
+    // guards the initial mount so an empty editor doesn't issue a
+    // stray preview request before the artist picks an image.
     useEffect(() => {
-        if (sourceFile !== null) {
-            void requestPreviewRef.current();
+        if (sourceFile === null) {
+            return;
         }
-    }, [sourceFile]);
+
+        void requestPreviewRef.current();
+    }, [sourceFile, dynamicContentStretch]);
 
     const handleCommit = (): void => {
         if (

@@ -102,6 +102,17 @@ class ThemeImageSlicer
         ?array $splitPercentages = null,
         ?float $leftPct = null,
         ?float $rightPct = null,
+        // Tail-fill flag — when true, forces the recompile/slice pass
+        // to anchor the right edge of the bounding box AND the
+        // content→end cut to the canvas right edge so the strip PNG
+        // grows visibly from the user's chosen right_pct to canvas
+        // width. The override is runtime-only ({self::sliceFromSingle()}
+        // uses the same flag); source meta.json keeps the user's
+        // recorded split_2 / right_pct so re-editing the theme in the
+        // builder restores the original geometry when the flag is
+        // untoggled. Defaults to false to preserve the unflagged
+        // recompile contract for legacy themes.
+        bool $dynamicContentStretch = false,
     ): array|false {
         foreach ([$themeDir, $outputPng, $outputJson, $originalJson] as $writablePath) {
             if ($writablePath === null) {
@@ -209,6 +220,36 @@ class ThemeImageSlicer
                 // enforces these upstream, so this is purely defensive.
                 $userSplit1 = max($bboxLeftPct + 0.01, min($bboxRightPct - 0.01, (float) $userSplit1));
                 $userSplit2 = max($userSplit1 + 0.01, min($bboxRightPct, (float) $userSplit2));
+
+                // Tail-fill: when the theme builder's dynamic content
+                // awareness toggle is on, snap the right edge of the
+                // bounding box AND the content→end cut all the way to
+                // the canvas edge for the recompile/slice pass only.
+                // Source meta.json keeps the user's recorded
+                // split_2 / right_pct for full re-edit-ability in
+                // the theme builder, while the compiled PNG that OBS
+                // / the live ticker reads physically stretches to
+                // canvas width. This is what closes the user's
+                // "nothing happens" symptom: without the override,
+                // the strip's painted area stops at the user's
+                // chosen right_pct (~47.77% for red-mist2) and the
+                // scrolling text rolls through ~52.23% of
+                // transparent air to canvas right.
+                //
+                // CACHE NOTE: the override is runtime-only — meta.json
+                // is not mutated, so the recompile's mtime-based cache
+                // guard in TickerStyleRepository::compileThemes()
+                // cannot detect a standalone flag toggle. The artist's
+                // toggle alone will not bust the OBS browser-source
+                // cache; the compiled PNG refreshes on the next
+                // commit (slice) or theme re-import. This is by design
+                // (toggle is a build-time preference, not an OBS
+                // cache-buster) and matches the runtime-only override
+                // contract used elsewhere in the recompile pipeline.
+                if ($dynamicContentStretch) {
+                    $bboxRightPct = 100.0;
+                    $userSplit2 = 100.0;
+                }
 
                 // Compute the bbox pixel anchors BEFORE the slot widths so
                 // the residue math below can reference them without PHP
@@ -638,6 +679,14 @@ class ThemeImageSlicer
         float $bottomPct = 100.0,
         float $leftPct = 0.0,
         float $rightPct = 100.0,
+        // Tail-fill flag (see {self::slice()} for the runtime
+        // override semantics). Forwarded to the inner slice() call so
+        // the source-path commit/preview and the recompile path agree
+        // on the same override behavior — without a shared flag the
+        // first-pass commit could write a bbox-cropped strip while a
+        // recompile would silently produce a canvas-wide one,
+        // producing a strip-width jump on every theme re-edit.
+        bool $dynamicContentStretch = false,
     ): array|false {
         $tempDir = $this->newTempDir();
 
@@ -684,6 +733,7 @@ class ThemeImageSlicer
                 [$split1, $split2],
                 $leftPct,
                 $rightPct,
+                $dynamicContentStretch,
             );
 
             if (! is_array($metrics)) {
