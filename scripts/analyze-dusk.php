@@ -56,9 +56,9 @@ echo "Visible-content bbox: x=[{$minX}..{$maxX}] y=[{$minY}..{$maxY}]  (size ".(
 // 3. Section-by-section: left (0-768), middle (768-1678), right (1678-1920).
 //    For each, report its visible bbox and how much of the slot is empty.
 $sections = [
-    'LEFT  (0..767)'   => [0, 767],
-    'MIDDLE(768..1677)'=> [768, 1677],
-    'RIGHT (1678..1919)'=> [1678, 1919],
+    'LEFT  (0..767)' => [0, 767],
+    'MIDDLE(768..1677)' => [768, 1677],
+    'RIGHT (1678..1919)' => [1678, 1919],
 ];
 
 foreach ($sections as $label => [$x0, $x1]) {

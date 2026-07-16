@@ -430,20 +430,20 @@ class TickerDashboardController extends Controller
                 (float) $validated['split_1'],
                 (float) $validated['split_2'],
                 $themeDir,
-                (int) $settings->canvas_width,            returnPreview: false,
-            // Forward the dynamic content awareness flag to the
-            // commit path so the first-pass compiled PNG matches the
-            // recompile contract ({ThemeImageSlicer::slice()} runtime
-            // override). Without this, the user's first commit
-            // would write a bbox-cropped strip while every
-            // subsequent recompile would write a canvas-wide strip,
-            // producing a visible strip-width jump after every theme
-            // re-edit when the flag is on.
-            topPct: (float) ($validated['top_pct'] ?? 0.0),
-            bottomPct: (float) ($validated['bottom_pct'] ?? 100.0),
-            leftPct: (float) ($validated['left_pct'] ?? 0.0),
-            rightPct: (float) ($validated['right_pct'] ?? 100.0),
-            dynamicContentStretch: (bool) ($validated['dynamic_content_stretch'] ?? false),
+                (int) $settings->canvas_width, returnPreview: false,
+                // Forward the dynamic content awareness flag to the
+                // commit path so the first-pass compiled PNG matches the
+                // recompile contract ({ThemeImageSlicer::slice()} runtime
+                // override). Without this, the user's first commit
+                // would write a bbox-cropped strip while every
+                // subsequent recompile would write a canvas-wide strip,
+                // producing a visible strip-width jump after every theme
+                // re-edit when the flag is on.
+                topPct: (float) ($validated['top_pct'] ?? 0.0),
+                bottomPct: (float) ($validated['bottom_pct'] ?? 100.0),
+                leftPct: (float) ($validated['left_pct'] ?? 0.0),
+                rightPct: (float) ($validated['right_pct'] ?? 100.0),
+                dynamicContentStretch: (bool) ($validated['dynamic_content_stretch'] ?? false),
             );
 
             if (! is_array($sliceMetrics)) {

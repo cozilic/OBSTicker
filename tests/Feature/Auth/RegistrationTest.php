@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use Laravel\Fortify\Features;
 
 beforeEach(function () {
@@ -27,7 +28,7 @@ test('new users can register', function () {
 });
 
 test('registration remains open for separate ticker owners', function () {
-    \App\Models\User::factory()->create(['role' => 'owner']);
+    User::factory()->create(['role' => 'owner']);
 
     $this->get(route('register'))
         ->assertOk();

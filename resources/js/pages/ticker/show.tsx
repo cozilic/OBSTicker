@@ -523,21 +523,23 @@ export default function TickerShow({ payloadUrl }: { payloadUrl: string }) {
     const defaultSkinTickerViewportStyle: CSSProperties = useTickerSkin
         ? themeMeta !== null
             ? // When dynamic_content_stretch is on (theme-builder
-              // flag persisted in meta.json) the controller
-              // hard-clamps split_2 to right_pct on the server, so
-              // the end slot has zero painted width. The viewport
-              // therefore extends all the way to the canvas right
-              // edge ("screen minus title minus end") instead of
-              // stopping at the end-stamp slot — the artist's
-              // intent is a single rolling content stream that
-              // fills the empty space the bbox left behind. Without
-              // the flag the viewport stays [split_1, split_2] and
-              // the scrolling text wraps before the end stamp, the
-              // legacy "ticker in a finite center panel" look.
+              // flag persisted in meta.json) the slicer snaps
+              // BOTH edges of the bounding box AND both cuts to
+              // the canvas edges, so the content slot fills 0–100%
+              // of the canvas and the title/end stamps collapse to
+              // a 1px footprint. The viewport therefore spans the
+              // full canvas width ("screen entirely, end-to-end")
+              // so the scrolling text rides the entire strip
+              // instead of being parked at the legacy [split_1,
+              // split_2] mid-panel. Without the flag the viewport
+              // stays [split_1, split_2] — the legacy "ticker in a
+              // finite center panel" look.
               {
                   top: 0,
                   bottom: 0,
-                  left: `${themeMeta.split_1}%`,
+                  left: themeMeta.dynamic_content_stretch === true
+                      ? '0%'
+                      : `${themeMeta.split_1}%`,
                   right: themeMeta.dynamic_content_stretch === true
                       ? '0%'
                       : `${Math.max(0, 100 - themeMeta.split_2)}%`,

@@ -102,16 +102,27 @@ class ThemeImageSlicer
         ?array $splitPercentages = null,
         ?float $leftPct = null,
         ?float $rightPct = null,
-        // Tail-fill flag — when true, forces the recompile/slice pass
-        // to anchor the right edge of the bounding box AND the
-        // content→end cut to the canvas right edge so the strip PNG
-        // grows visibly from the user's chosen right_pct to canvas
-        // width. The override is runtime-only ({self::sliceFromSingle()}
-        // uses the same flag); source meta.json keeps the user's
-        // recorded split_2 / right_pct so re-editing the theme in the
-        // builder restores the original geometry when the flag is
-        // untoggled. Defaults to false to preserve the unflagged
-        // recompile contract for legacy themes.
+        // Content-Aware flag — when true, the recompile/slice pass:
+        //   (a) snaps BOTH bounding-box edges and BOTH split cuts
+        //       to the canvas edges so the content slot spans
+        //       0–100% of the canvas (title/end slots collapse to
+        //       1 px under the slot-math `max(1, …)` floor);
+        //   (b) DROPS the title/end crops from the rendered PNG
+        //       entirely in the $outputPng blit, single-blitting
+        //       content.png seam-free across the full canvas —
+        //       the artist's content-slice artwork is the ONLY
+        //       thing that reaches the compiled strip.
+        //
+        // The flag is runtime-only ({self::sliceFromSingle()} forwards
+        // the same flag, but its cut stage does NOT override
+        // split_1/split_2 — content.png is faithful to the user's
+        // recorded splits, otherwise artwork drawn outside that
+        // region would bleed into the visible strip after the
+        // canvas-wide stretch). Source meta.json keeps the user's
+        // recorded split_1/split_2/left_pct/right_pct so re-editing
+        // the theme in the builder restores the original geometry
+        // when the flag is untoggled. Defaults to false to preserve
+        // the unflagged recompile contract for legacy themes.
         bool $dynamicContentStretch = false,
     ): array|false {
         foreach ([$themeDir, $outputPng, $outputJson, $originalJson] as $writablePath) {
@@ -221,33 +232,47 @@ class ThemeImageSlicer
                 $userSplit1 = max($bboxLeftPct + 0.01, min($bboxRightPct - 0.01, (float) $userSplit1));
                 $userSplit2 = max($userSplit1 + 0.01, min($bboxRightPct, (float) $userSplit2));
 
-                // Tail-fill: when the theme builder's dynamic content
-                // awareness toggle is on, snap the right edge of the
-                // bounding box AND the content→end cut all the way to
-                // the canvas edge for the recompile/slice pass only.
+                // Bilateral override: when the theme builder's
+                // dynamic content awareness toggle is on, snap BOTH
+                // edges of the bounding box AND BOTH cuts to the
+                // canvas edges for the recompile/slice pass only.
+                // The content slot ends up spanning 0–100% of the
+                // canvas; the title and end slots collapse to the
+                // 1px floor enforced by max(1, …) below. The
+                // output blit further down branches on the same
+                // flag and DROPS the title/end crops from the
+                // canvas entirely — only content.png is composited,
+                // stretched seam-free across the full canvas.
+                // Combined: the artist sees ONLY their content-
+                // slice artwork stretched to fill the ticker,
+                // regardless of where they originally positioned
+                // the title/end stamps in the source.
+                //
                 // Source meta.json keeps the user's recorded
-                // split_2 / right_pct for full re-edit-ability in
-                // the theme builder, while the compiled PNG that OBS
-                // / the live ticker reads physically stretches to
-                // canvas width. This is what closes the user's
-                // "nothing happens" symptom: without the override,
-                // the strip's painted area stops at the user's
-                // chosen right_pct (~47.77% for red-mist2) and the
-                // scrolling text rolls through ~52.23% of
-                // transparent air to canvas right.
+                // split_1 / split_2 / left_pct / right_pct for
+                // full re-edit-ability in the theme builder when
+                // they later untoggle the flag. Untoggling reruns
+                // the recompile through the legacy code path and
+                // restores the original bbox / slot geometry.
                 //
                 // CACHE NOTE: the override is runtime-only — meta.json
                 // is not mutated, so the recompile's mtime-based cache
-                // guard in TickerStyleRepository::compileThemes()
-                // cannot detect a standalone flag toggle. The artist's
-                // toggle alone will not bust the OBS browser-source
-                // cache; the compiled PNG refreshes on the next
-                // commit (slice) or theme re-import. This is by design
-                // (toggle is a build-time preference, not an OBS
-                // cache-buster) and matches the runtime-only override
-                // contract used elsewhere in the recompile pipeline.
+                // TickerStyleRepository::compileThemes() additionally
+                // busts on the strategy-named
+                // `_compiled_under_dynamic_stretch_single_blit`
+                // marker we write into compiled meta.json below —
+                // legacy metas (including those carrying the older
+                // bilateral-cut-stage strategies'
+                // `_compiled_under_dynamic_override` marker) lack
+                // the current strategy's key and are forced to
+                // recompile exactly once on the first deploy of the
+                // new strategy. Marker key is strategy-named so a
+                // bump forces a clean rebuild across all dynamic-
+                // stretched themes.
                 if ($dynamicContentStretch) {
+                    $bboxLeftPct = 0.0;
                     $bboxRightPct = 100.0;
+                    $userSplit1 = 0.0;
                     $userSplit2 = 100.0;
                 }
 
@@ -397,6 +422,29 @@ class ThemeImageSlicer
                 'end_stamp_width_pct' => $this->percentValue($endCanvasWidth, $effectiveCanvasWidth),
             ];
 
+            // Under the bilateral dynamic_content_stretch
+            // override, the title and end PNGs are CONTAIN-fitted
+            // into 1px-wide slots at the canvas edges so they read
+            // as nearly-invisible specks. visibleBounds() still
+            // returns their opaque minority (a few source pixels),
+            // which would drive the live ticker's label overlay
+            // (consumed as `title_stamp_*_pct` / `end_stamp_*_pct`
+            // in resources/js/pages/ticker/show.tsx and
+            // resources/js/components/ticker/theme-skin-preview.tsx)
+            // to fit text into a hairline-wide rect. Zero the four
+            // visible-stamp metrics so the consumer-side `typeof
+            // === 'number' ? : fallback` chain takes the
+            // "no visible stamp" branch cleanly. The fallback path
+            // already exists (legacy themes without these fields),
+            // so this stays consistent with how unmeasured themes
+            // were always rendered.
+            if ($dynamicContentStretch) {
+                $metrics['title_stamp_left_pct'] = 0.0;
+                $metrics['title_stamp_width_pct'] = 0.0;
+                $metrics['end_stamp_left_pct'] = 0.0;
+                $metrics['end_stamp_width_pct'] = 0.0;
+            }
+
             if ($outputPng !== null) {
                 File::ensureDirectoryExists(dirname($outputPng));
 
@@ -423,16 +471,39 @@ class ThemeImageSlicer
                 // canvas edges, so artwork sits where the designer
                 // dragged the handles and `dynamic_content_stretch`
                 // collapses the end slot cleanly to the bbox right edge.
-                $this->blitResized($canvas, $leftImg, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
-                $this->blitResized($canvas, $middleImg, $bboxLeftPx + $leftWidth + $middleFit[2], 0, $middleFit[0], $middleFit[1]);
-                $this->blitResized(
-                    $canvas,
-                    $rightImg,
-                    $bboxRightPx - $rightWidth + $rightFit[2],
-                    0,
-                    $rightFit[0],
-                    $rightFit[1],
-                );
+                if ($dynamicContentStretch) {
+                    // Single-blit mode under the bilateral override:
+                    // content.png takes the entire canvas, stretched
+                    // seam-free from x=0 to x=$effectiveCanvasWidth.
+                    // title.png and end.png were produced by the cut
+                    // stage (sliceFromSingle → splitToTempPngs above)
+                    // and written to disk by the commit block earlier
+                    // in this method (so re-edits + flag toggles keep
+                    // them), but their slots are DROPped from the
+                    // rendered PNG. The user explicitly wants only
+                    // the content slice stretched — nothing else; any
+                    // title/end artwork that survived the cut stage is
+                    // intentionally excluded from the compiled strip.
+                    $this->blitResized(
+                        $canvas,
+                        $middleImg,
+                        0,
+                        0,
+                        $effectiveCanvasWidth,
+                        $height,
+                    );
+                } else {
+                    $this->blitResized($canvas, $leftImg, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
+                    $this->blitResized($canvas, $middleImg, $bboxLeftPx + $leftWidth + $middleFit[2], 0, $middleFit[0], $middleFit[1]);
+                    $this->blitResized(
+                        $canvas,
+                        $rightImg,
+                        $bboxRightPx - $rightWidth + $rightFit[2],
+                        0,
+                        $rightFit[0],
+                        $rightFit[1],
+                    );
+                }
 
                 imagepng($canvas, $outputPng, 9);
                 imagedestroy($canvas);
@@ -448,6 +519,37 @@ class ThemeImageSlicer
                         $meta = array_merge($existing, $metrics);
                     }
                 }
+
+                // Recompile-cache marker: written whenever the
+                // dynamic_content_stretch override fires under the
+                // current single-blit-content strategy so
+                // TickerStyleRepository::compileThemes() can detect
+                // a SEMANTIC change across deploys (boolean flag
+                // alone cannot see right-only → bilateral →
+                // single-blit content). The marker key is
+                // STRATEGY-NAMED — bump the suffix on every new
+                // contract so previously-compiled metas are
+                // guaranteed to recompile and never silently
+                // serve a stale PNG for the same source flag.
+                // Legacy compiled metas that carry dynamic=true
+                // but lack the current strategy's marker key are
+                // forced to recompile exactly once on the first
+                // deploy — no manual `rm public/ticker-styles/
+                // compiled/*` needed. On untoggle, the ELSE
+                // branch explicitly unsets the marker so a
+                // later re-toggle is observed by the cache
+                // check; without the unset,
+                // `array_merge($existing, $metrics)` would carry
+                // the marker forward across the untoggle, masking
+                // the re-toggle as a no-op and leaving stale
+                // right-only-OFF-shrunken PNGs in place after
+                // the artist flips the flag back on.
+                if ($dynamicContentStretch) {
+                    $meta['_compiled_under_dynamic_stretch_single_blit'] = true;
+                } else {
+                    unset($meta['_compiled_under_dynamic_stretch_single_blit']);
+                }
+
                 File::ensureDirectoryExists(dirname($outputJson));
                 File::put(
                     $outputJson,
@@ -691,6 +793,22 @@ class ThemeImageSlicer
         $tempDir = $this->newTempDir();
 
         try {
+            // Cut stage always uses the user's recorded split_1/split_2
+            // — even when the artist's dynamic_content_stretch toggle
+            // is on. The bilateral override lives entirely in slice()'s
+            // slot math + the single-blit content blit further down
+            // (see comment there). Routing the whole source into
+            // content.png here was tried and reverted: it pulled
+            // artwork the artist designed outside their recorded
+            // cuts (e.g. an end accent placed mid-canvas or text at
+            // x ≈ 60% of source width) into the visible strip where
+            // it appeared as dramatically-stretched regions inside
+            // the runtime-stretched content slot. With the cut
+            // stage now bypassing the flag, content.png faithfully
+            // captures ONLY the region between split_1 and split_2;
+            // slice() stretches that narrow slice across the full
+            // canvas and drops title/end from the rendered output
+            // entirely.
             $split = $this->splitToTempPngs(
                 $sourcePath,
                 $split1,

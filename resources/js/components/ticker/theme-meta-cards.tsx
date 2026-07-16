@@ -811,7 +811,7 @@ function PartTile({
     return (
         <div
             className={cn(
-                'group relative aspect-[4/1] overflow-hidden rounded-lg border bg-checker bg-gradient-to-br',
+                'group relative aspect-[1/1] overflow-hidden rounded-lg border bg-checker bg-gradient-to-br',
                 tone,
             )}
         >

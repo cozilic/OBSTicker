@@ -528,6 +528,21 @@ class TickerStyleRepository
                 continue;
             }
 
+            // Read the source meta.json once and share the decoded
+            // value between the cache-bust comparison (below) and
+            // the recompile body (further below). Re-decoding in
+            // both code paths would double the file I/O on every
+            // cache miss and risk subtle drift if the artist
+            // writes the file mid-compile. `(string) "..."` coerces
+            // a read failure to an empty string (which json_decode
+            // rejects as null); the is_array gate then collapses
+            // that to an empty array so a missing/malformed source
+            // doesn't crash the compile cascade.
+            $sourceMeta = json_decode((string) file_get_contents($themeJson), true);
+            if (! is_array($sourceMeta)) {
+                $sourceMeta = [];
+            }
+
             $titleFile = $this->findImageFile($themeDir, 'title');
             $contentFile = $this->findImageFile($themeDir, 'content');
             $endFile = $this->findImageFile($themeDir, 'end');
@@ -547,8 +562,86 @@ class TickerStyleRepository
                     }
                 }
 
+                // The dynamic-content-stretch override in slice() is
+                // runtime-only — re-toggling the flag in the source
+                // meta.json must not stencil the user's recorded
+                // split_2/right_pct, so the mtime-only guard above
+                // cannot detect a standalone flag flip on a theme
+                // whose source PNGs are otherwise untouched. Compare
+                // the flag baked into the previously-compiled
+                // meta.json against the current value in $sourceMeta
+                // (loaded once at the top of the theme iteration); on
+                // mismatch, force a recompile so the PNG physically
+                // reflects the new override state. Legacy compiled
+                // meta.jsons written before this field existed
+                // default to `false` here, which trips the expected
+                // one-shot recompile the first time an artist enables
+                // the override on a previously-compiled theme. The
+                // (bool) cast treats absent / null as `false` on both
+                // sides so the comparison resolves to a mismatch
+                // only when the artist actually toggled the flag.
+                //
+                // Override-shape detection: comparing the boolean
+                // alone misses SEMANTIC changes to the override
+                // across deploys (right-only → bilateral →
+                // single-blit content is itself invisible to a
+                // flag comparison). ThemeImageSlicer writes the
+                // strategy-named
+                // `_compiled_under_dynamic_stretch_single_blit`
+                // marker into compiled meta.json whenever the
+                // override fires under the current single-blit
+                // strategy, so a one-shot recompile is forced
+                // here for any theme that carries `dynamic=true`
+                // in source meta but the previously-compiled
+                // meta lacks the marker key for the current
+                // strategy. The marker key is bumped on every
+                // strategy change (the previous bilateral-cut-
+                // stage strategy wrote a different key,
+                // `_compiled_under_dynamic_override`) — without
+                // that, a deploy that changes the override's
+                // behavior would leave previously-compiled
+                // themes' PNGs frozen at the older semantics
+                // and serve them after the new contract lands.
+                if (! $needsCompile) {
+                    $compiledMeta = json_decode(
+                        (string) file_get_contents($outputJson),
+                        true,
+                    );
+                    $sourceDynamic = (bool) ($sourceMeta['dynamic_content_stretch'] ?? false);
+                    $compiledDynamic = is_array($compiledMeta)
+                        ? (bool) ($compiledMeta['dynamic_content_stretch'] ?? false)
+                        : false;
+                    if ($sourceDynamic !== $compiledDynamic) {
+                        $needsCompile = true;
+                    } elseif (
+                        $sourceDynamic
+                        && is_array($compiledMeta)
+                        && ! array_key_exists('_compiled_under_dynamic_stretch_single_blit', $compiledMeta)
+                    ) {
+                        // Legacy transition: the compiled meta was
+                        // produced either before the current
+                        // strategy landed OR under an older
+                        // strategy whose marker key differs.
+                        // Force a one-shot recompile; the next
+                        // write will carry the current strategy's
+                        // marker and stay in sync until the
+                        // artist actually toggles the flag again.
+                        $needsCompile = true;
+                    }
+                }
+
                 if ($needsCompile) {
                     try {
+                        // Re-alias the source meta.json (loaded once at
+                        // the top of the theme iteration) so the rest
+                        // of the recompile body keeps its existing
+                        // $themeMeta callsite contract. The defensive
+                        // is_array fallback to [] already happened in
+                        // the shared decode above; a redundant fall-
+                        // through here would only mask a missing-file
+                        // edge case the cache check already covers.
+                        $themeMeta = $sourceMeta;
+
                         // The committed theme's meta.json records the user's
                         // originally-chosen split percentages. The first-pass
                         // commit flow persists UN-trimmed cut-region PNGs
@@ -559,10 +652,6 @@ class TickerStyleRepository
                         // otherwise imagesx() returns the cut-region
                         // dimensions including transparent padding and the
                         // slot boundaries sit on transparent canvas.
-                        $themeMeta = json_decode((string) file_get_contents($themeJson), true);
-                        if (! is_array($themeMeta)) {
-                            $themeMeta = [];
-                        }
 
                         $splitPercentages = null;
                         $augmented = false;
