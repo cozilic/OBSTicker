@@ -616,7 +616,7 @@ class TickerStyleRepository
                     } elseif (
                         $sourceDynamic
                         && is_array($compiledMeta)
-                        && ! array_key_exists('_compiled_under_dynamic_stretch_canvas_wide_alpha_trim', $compiledMeta)
+                        && ! array_key_exists('_compiled_under_dynamic_stretch_right_anchored_last_tile', $compiledMeta)
                     ) {
                         // Legacy transition: the compiled meta was
                         // produced either before the current

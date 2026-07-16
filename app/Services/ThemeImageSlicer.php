@@ -281,7 +281,7 @@ class ThemeImageSlicer
                 // recompile's mtime-based cache
                 // TickerStyleRepository::compileThemes() additionally
                 // busts on the strategy-named
-                // `_compiled_under_dynamic_stretch_canvas_wide_alpha_trim`
+                // `_compiled_under_dynamic_stretch_right_anchored_last_tile`
                 // marker we write into compiled meta.json below —
                 // legacy metas (including those carrying the older
                 // `_compiled_under_dynamic_stretch_seamless_extend`,
@@ -611,26 +611,40 @@ class ThemeImageSlicer
 
                     $tileStartX = $leftWidth;
                     $tileEndX = max($tileStartX, $effectiveCanvasWidth - $rightWidth);
-                    $tileX = $tileStartX;
-                    while ($tileX < $tileEndX) {
-                        $drawW = min($scaledTileW, $tileEndX - $tileX);
-                        $isPartial = $drawW < $scaledTileW;
-                        $srcClipW = $isPartial
-                            ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
-                            : $tileSrcW;
-                        imagecopyresampled(
-                            $canvas,
-                            $tileSource,
-                            $tileX,
-                            0,
-                            0,
-                            0,
-                            $drawW,
-                            $height,
-                            $srcClipW,
-                            $tileSrcH,
-                        );
-                        $tileX += $scaledTileW;
+                    $fillWidth = $tileEndX - $tileStartX;
+                    if ($fillWidth > 0) {
+                        if ($fillWidth <= $scaledTileW) {
+                            // Space for at most one tile: draw a single left-anchored
+                            // partial that fills the whole title-to-end strip.
+                            $srcClipW = max(1, (int) round($fillWidth * ($tileSrcW / $scaledTileW)));
+                            imagecopyresampled(
+                                $canvas, $tileSource, $tileStartX, 0, 0, 0,
+                                $fillWidth, $height, $srcClipW, $tileSrcH,
+                            );
+                        } else {
+                            // Reserve the right edge for one full tile right-anchored at
+                            // $tileEndX; fill the remaining middle region left-to-right
+                            // so the clip lands on the SECOND-TO-LAST visible tile (and the
+                            // last visible tile is a clean full repetition).
+                            $lastTileX = $tileEndX - $scaledTileW;
+                            $tileX = $tileStartX;
+                            while ($tileX < $lastTileX) {
+                                $drawW = min($scaledTileW, $lastTileX - $tileX);
+                                $isPartial = $drawW < $scaledTileW;
+                                $srcClipW = $isPartial
+                                    ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
+                                    : $tileSrcW;
+                                imagecopyresampled(
+                                    $canvas, $tileSource, $tileX, 0, 0, 0,
+                                    $drawW, $height, $srcClipW, $tileSrcH,
+                                );
+                                $tileX += $drawW;
+                            }
+                            imagecopyresampled(
+                                $canvas, $tileSource, $lastTileX, 0, 0, 0,
+                                $scaledTileW, $height, $tileSrcW, $tileSrcH,
+                            );
+                        }
                     }
 
                     // Re-fit title/end to their slots with the
@@ -729,9 +743,9 @@ class ThemeImageSlicer
                 // right-only-OFF-shrunken PNGs in place after
                 // the artist flips the flag back on.
                 if ($dynamicContentStretch) {
-                    $meta['_compiled_under_dynamic_stretch_canvas_wide_alpha_trim'] = true;
+                    $meta['_compiled_under_dynamic_stretch_right_anchored_last_tile'] = true;
                 } else {
-                    unset($meta['_compiled_under_dynamic_stretch_canvas_wide_alpha_trim']);
+                    unset($meta['_compiled_under_dynamic_stretch_right_anchored_last_tile']);
                 }
 
                 File::ensureDirectoryExists(dirname($outputJson));
