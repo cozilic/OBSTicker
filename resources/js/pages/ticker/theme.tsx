@@ -186,6 +186,16 @@ export default function TickerTheme() {
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [isPreviewing, setIsPreviewing] = useState<boolean>(false);
     const [previewProgress, setPreviewProgress] = useState<number>(0);
+    // Probed natural aspect of the recompiled strip PNG (data URL),
+    // measured by a throwaway <img> once previewUrl resolves. Frames
+    // the editor preview block at the strip's exact aspect rather
+    // than a hardcoded letterboxed ratio. Stays null until the probe
+    // has decoded the current previewUrl — the JSX falls back to a
+    // className aspect-[16/1] (a typical 6.2% bbox on a 1920×1080
+    // source) for the one frame before the probe returns.
+    const [previewAspect, setPreviewAspect] = useState<number | null>(
+        null,
+    );
 
     // Commit metadata — persisted alongside the compiled theme on
     // submit.
@@ -247,6 +257,64 @@ export default function TickerTheme() {
         },
         [],
     );
+
+    // Probe the recompiled strip PNG for its natural aspect so the
+    // editor preview block can adapt its container to whatever
+    // bbox + splits the slicer cut down to (1920 × clamp(bbox
+    // height, [32, 150]) → typically 12.8:1 to 60:1). Loading
+    // the data URL into a throwaway Image() is cheap and gives
+    // us the exact pixel aspect the supplier actually wrote,
+    // which is more robust than re-deriving naturalDims × bbox ×
+    // clamp client-side and trying to mirror ThemeImageSlicer's
+    // round/min/max math. Cleanup nulls the handlers and cancels
+    // any pending decode so a stale response after a rapid
+    // dragend chain cannot set state on a stripped-down tree.
+    //
+    // Intentionally does NOT call setPreviewAspect(null)
+    // synchronously in the early-return branch when previewUrl
+    // is empty: the JSX renders the preview container only
+    // inside `{previewUrl !== null && (...)}`, so any
+    // previously-good aspect is invisible during the empty
+    // window. Skipping the synchronous reset also sidesteps
+    // the `react-hooks/set-state-in-effect` lint warning that
+    // flagged the prior implementation — probe.onload's
+    // setPreviewAspect runs in an async event handler and is
+    // not in scope of the rule.
+    useEffect(() => {
+        if (typeof previewUrl !== 'string' || previewUrl === '') {
+            return;
+        }
+
+        const probe = new Image();
+
+        probe.onload = (): void => {
+            if (probe.naturalHeight > 0) {
+                setPreviewAspect(
+                    probe.naturalWidth / probe.naturalHeight,
+                );
+            }
+        };
+
+        // Keep an empty handler so a transient decode failure
+        // doesn't drop a previously-good aspect: the probe only
+        // ever sets previewAspect based on a successful decode,
+        // so on error we keep whatever aspect was last
+        // measured so the user's most recent successful preview
+        // keeps framing edge-to-edge instead of falling back to
+        // the aspect-[16/1] className for the rest of this
+        // previewUrl's lifetime.
+        probe.onerror = (): void => {
+            /* keep previous aspect */
+        };
+
+        probe.src = previewUrl;
+
+        return (): void => {
+            probe.onload = null;
+            probe.onerror = null;
+            probe.src = '';
+        };
+    }, [previewUrl]);
 
     const clamp = (value: number, min: number, max: number): number =>
         Math.min(max, Math.max(min, value));
@@ -1915,42 +1983,59 @@ export default function TickerTheme() {
                                 )}
 
                                 {previewUrl !== null && (
-                                    // Always render the editor's
-                                    // preview in a 16:9 canvas-ticker
-                                    // aspect with object-cover so the
-                                    // strip ALWAYS fills the preview
-                                    // window edge-to-edge in height,
-                                    // no matter what the user drops in
-                                    // or how the bbox crop landed. This
-                                    // supersedes the previous probe-
-                                    // driven dynamic-aspect approach,
-                                    // which left the user staring at a
-                                    // 22-25 px-tall sliver (a 1920×60
-                                    // strip at 700 px container width
-                                    // reads as "not zoomed in / not
-                                    // covering the window" even though
-                                    // it is technically filling edge-to-
-                                    // edge) and locked onto a 4:1
-                                    // letterbox when the throwaway
-                                    // `new Image()` probe silently
-                                    // failed on the multi-MB base64
-                                    // data URL. object-cover instead
-                                    // scales the strip up to fill the
-                                    // container's height while
-                                    // preserving its natural aspect
-                                    // ratio — horizontally cropping the
-                                    // segment that doesn't fit, which is
-                                    // exactly the broadcast framing a
-                                    // ticker would land in. The bg-
-                                    // muted/30 + bg-checker combinations
-                                    // keep transparent PNG padding inside
-                                    // the strip readable so the artist
-                                    // can still see alpha-aware gaps.
-                                    <div className="aspect-video w-full overflow-hidden rounded-lg border border-border/60 bg-muted/30">
+                                    // Adapt the editor's preview window
+                                    // to the recompiled strip's natural
+                                    // aspect (typically 1920 × 32–150
+                                    // px → 12.8:1 to 60:1) so the user
+                                    // sees the FULL bbox output framed
+                                    // edge-to-edge, horizontally
+                                    // UN-cropped, exactly the way the
+                                    // live ticker will draw it on air.
+                                    // The container's inline
+                                    // aspect-ratio style snaps to
+                                    // {previewAspect.toFixed(3)} the
+                                    // moment the throwaway probe decodes
+                                    // the data URL; until that single
+                                    // frame resolves we render at 16:1
+                                    // (a typical ~6.2% bbox case on a
+                                    // 1920×1080 source) so the pre-paint
+                                    // reads as a strip rather than a
+                                    // flat 4:1 letterbox. object-fill
+                                    // (not object-cover) is the matching
+                                    // <img> fit so the strip edge-to-
+                                    // edge fills the dynamically sized
+                                    // container with no horizontal
+                                    // cropping — the previous object-
+                                    // cover approach was the source of
+                                    // the user's "completely wrong"
+                                    // complaint because it sliced the
+                                    // visible strip down to a middle
+                                    // column. bg-muted/30 + bg-checker
+                                    // keep transparent PNG padding
+                                    // visible in case a future slicer
+                                    // variant puts alpha gutters inside
+                                    // the strip.
+                                    <div
+                                        className={`w-full overflow-hidden rounded-lg border border-border/60 bg-muted/30${
+                                            previewAspect === null
+                                                ? ' aspect-[16/1]'
+                                                : ''
+                                        }`}
+                                        style={
+                                            previewAspect !== null
+                                                ? {
+                                                      aspectRatio:
+                                                          previewAspect.toFixed(
+                                                              3,
+                                                          ),
+                                                  }
+                                                : undefined
+                                        }
+                                    >
                                         <img
                                             src={previewUrl}
                                             alt={t('themePreview')}
-                                            className="bg-checker block h-full w-full object-cover"
+                                            className="bg-checker block h-full w-full object-fill"
                                         />
                                     </div>
                                 )}
