@@ -281,9 +281,12 @@ class ThemeImageSlicer
                 // recompile's mtime-based cache
                 // TickerStyleRepository::compileThemes() additionally
                 // busts on the strategy-named
-                // `_compiled_under_dynamic_stretch_left_to_right_clip_last`
+                // `_compiled_under_dynamic_stretch_bbox_bounded_alpha_trim_seamless`
                 // marker we write into compiled meta.json below —
                 // legacy metas (including those carrying the older
+                // `_compiled_under_dynamic_stretch_left_to_right_clip_last`,
+                // `_compiled_under_dynamic_stretch_right_anchored_last_tile`,
+                // `_compiled_under_dynamic_stretch_canvas_wide_alpha_trim`,
                 // `_compiled_under_dynamic_stretch_seamless_extend`,
                 // `_compiled_under_dynamic_stretch_alpha_trim_repeat_tile`,
                 // `_compiled_under_dynamic_stretch_single_blit`, and
@@ -601,16 +604,17 @@ class ThemeImageSlicer
                         }
                     }
 
-                    // Tile content across $leftWidth..canvas-$rightWidth
-                    // (canvas-WIDE, ignoring the user's narrow bbox for
-                    // output positioning — bbox is a source-design hint
-                    // only).
+                    // Bbox-anchored: tile bounds = bbox middle
+                    // ($bboxLeftPx + $leftWidth ..
+                    // $bboxRightPx - $rightWidth); outside-bbox canvas
+                    // stays transparent. See commit history for the
+                    // canvas-wide round that this replaced.
                     $tileSrcW = max(1, imagesx($tileSource));
                     $tileSrcH = max(1, imagesy($tileSource));
                     $scaledTileW = max(1, (int) round($tileSrcW * ($height / $tileSrcH)));
 
-                    $tileStartX = $leftWidth;
-                    $tileEndX = max($tileStartX, $effectiveCanvasWidth - $rightWidth);
+                    $tileStartX = $bboxLeftPx + $leftWidth;
+                    $tileEndX = max($tileStartX, $bboxRightPx - $rightWidth);
                     if ($tileEndX > $tileStartX) {
                         // Fill left-to-right up to $tileEndX with no
                         // special-case last tile. The trailing visible
@@ -659,7 +663,7 @@ class ThemeImageSlicer
                     // content beneath).
                     $leftFitW = $trimmedLeftFit[0];
                     $leftFitH = $trimmedLeftFit[1];
-                    $leftBlitX = $leftWidth - $leftFitW;
+                    $leftBlitX = $bboxLeftPx + $leftWidth - $leftFitW;
 
                     // End: left-anchor inside end slot.
                     $trimmedRightFit = $this->fitInBox(
@@ -671,7 +675,7 @@ class ThemeImageSlicer
                     );
                     $rightFitW = $trimmedRightFit[0];
                     $rightFitH = $trimmedRightFit[1];
-                    $rightBlitX = $effectiveCanvasWidth - $rightWidth;
+                    $rightBlitX = $bboxRightPx - $rightWidth;
 
                     $this->blitResized($canvas, $leftSource, $leftBlitX, 0, $leftFitW, $leftFitH);
                     $this->blitResized($canvas, $rightSource, $rightBlitX, 0, $rightFitW, $rightFitH);
@@ -738,9 +742,9 @@ class ThemeImageSlicer
                 // right-only-OFF-shrunken PNGs in place after
                 // the artist flips the flag back on.
                 if ($dynamicContentStretch) {
-                    $meta['_compiled_under_dynamic_stretch_left_to_right_clip_last'] = true;
+                    $meta['_compiled_under_dynamic_stretch_bbox_bounded_alpha_trim_seamless'] = true;
                 } else {
-                    unset($meta['_compiled_under_dynamic_stretch_left_to_right_clip_last']);
+                    unset($meta['_compiled_under_dynamic_stretch_bbox_bounded_alpha_trim_seamless']);
                 }
 
                 File::ensureDirectoryExists(dirname($outputJson));
