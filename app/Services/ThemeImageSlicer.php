@@ -281,7 +281,7 @@ class ThemeImageSlicer
                 // recompile's mtime-based cache
                 // TickerStyleRepository::compileThemes() additionally
                 // busts on the strategy-named
-                // `_compiled_under_dynamic_stretch_right_anchored_last_tile`
+                // `_compiled_under_dynamic_stretch_left_to_right_clip_last`
                 // marker we write into compiled meta.json below —
                 // legacy metas (including those carrying the older
                 // `_compiled_under_dynamic_stretch_seamless_extend`,
@@ -611,39 +611,34 @@ class ThemeImageSlicer
 
                     $tileStartX = $leftWidth;
                     $tileEndX = max($tileStartX, $effectiveCanvasWidth - $rightWidth);
-                    $fillWidth = $tileEndX - $tileStartX;
-                    if ($fillWidth > 0) {
-                        if ($fillWidth <= $scaledTileW) {
-                            // Space for at most one tile: draw a single left-anchored
-                            // partial that fills the whole title-to-end strip.
-                            $srcClipW = max(1, (int) round($fillWidth * ($tileSrcW / $scaledTileW)));
+                    if ($tileEndX > $tileStartX) {
+                        // Fill left-to-right up to $tileEndX with no
+                        // special-case last tile. The trailing visible
+                        // tile is partial (left-clipped source) when the
+                        // remaining space is shorter than $scaledTileW;
+                        // $tileX advances by $drawW each iteration so
+                        // the partial lands precisely at $tileEndX with
+                        // no pixel gap before end.png's left edge. The
+                        // previous round reserved a separate right-
+                        // anchored full tile at the boundary which made
+                        // the last visible tile a clean full repetition,
+                        // but visually duplicated end.png's right-side
+                        // chevron — the user reported that as "end is
+                        // repeating" because the right-anchored last
+                        // chevron-hybrid tile sat flush against end.png
+                        // and read as a second end accent.
+                        $tileX = $tileStartX;
+                        while ($tileX < $tileEndX) {
+                            $drawW = min($scaledTileW, $tileEndX - $tileX);
+                            $isPartial = $drawW < $scaledTileW;
+                            $srcClipW = $isPartial
+                                ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
+                                : $tileSrcW;
                             imagecopyresampled(
-                                $canvas, $tileSource, $tileStartX, 0, 0, 0,
-                                $fillWidth, $height, $srcClipW, $tileSrcH,
+                                $canvas, $tileSource, $tileX, 0, 0, 0,
+                                $drawW, $height, $srcClipW, $tileSrcH,
                             );
-                        } else {
-                            // Reserve the right edge for one full tile right-anchored at
-                            // $tileEndX; fill the remaining middle region left-to-right
-                            // so the clip lands on the SECOND-TO-LAST visible tile (and the
-                            // last visible tile is a clean full repetition).
-                            $lastTileX = $tileEndX - $scaledTileW;
-                            $tileX = $tileStartX;
-                            while ($tileX < $lastTileX) {
-                                $drawW = min($scaledTileW, $lastTileX - $tileX);
-                                $isPartial = $drawW < $scaledTileW;
-                                $srcClipW = $isPartial
-                                    ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
-                                    : $tileSrcW;
-                                imagecopyresampled(
-                                    $canvas, $tileSource, $tileX, 0, 0, 0,
-                                    $drawW, $height, $srcClipW, $tileSrcH,
-                                );
-                                $tileX += $drawW;
-                            }
-                            imagecopyresampled(
-                                $canvas, $tileSource, $lastTileX, 0, 0, 0,
-                                $scaledTileW, $height, $tileSrcW, $tileSrcH,
-                            );
+                            $tileX += $drawW;
                         }
                     }
 
@@ -743,9 +738,9 @@ class ThemeImageSlicer
                 // right-only-OFF-shrunken PNGs in place after
                 // the artist flips the flag back on.
                 if ($dynamicContentStretch) {
-                    $meta['_compiled_under_dynamic_stretch_right_anchored_last_tile'] = true;
+                    $meta['_compiled_under_dynamic_stretch_left_to_right_clip_last'] = true;
                 } else {
-                    unset($meta['_compiled_under_dynamic_stretch_right_anchored_last_tile']);
+                    unset($meta['_compiled_under_dynamic_stretch_left_to_right_clip_last']);
                 }
 
                 File::ensureDirectoryExists(dirname($outputJson));
