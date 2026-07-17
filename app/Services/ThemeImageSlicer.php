@@ -101,29 +101,36 @@ class ThemeImageSlicer
         ?string $outputJson = null, ?string $originalJson = null,
         ?array $splitPercentages = null,
         ?float $leftPct = null,
-        ?float $rightPct = null,        // Content-Aware flag — when true:
-        //   (a) content.png is alpha-trimmed for clean tile seams
-        //       and tiled horizontally across the bbox middle
-        //       region ($bboxLeftPx + $leftWidth ..
-        //       $bboxRightPx - $rightWidth). Outside-bbox canvas
-        //       stays transparent.
-        //   (b) title.png is right-anchored inside the title slot
-        //       ending at split_1 (CONTAIN-fit, no alpha-trim —
-        //       see the in-method comment + CACHE NOTE for the
-        //       fitInBox() over-stretch rationale).
-        //   (c) end.png is left-anchored inside the end slot
-        //       starting at split_2 (CONTAIN-fit, no alpha-trim —
-        //       same constraint as title). Content tiles NEVER
-        //       bleed past the end.png position.
+        ?float $rightPct = null,        // Content-Aware flag — when true (canvas-wide tile + STRETCH overlay):
+        //   (a) content.png is alpha-trimmed for clean tile seams and tiled
+        //       horizontally across the FULL canvas (0..$effectiveCanvasWidth)
+        //       so the artist sees a seamless repeating strip rather than
+        //       a bbox-middle band.
+        //   (b) title.png is STRETCH-fit into its canvas-slot at
+        //       [$bboxLeftPx..$bboxLeftPx + $leftWidth], y=0, dropping
+        //       the outer CONTAIN fit + asymmetric right-anchor so the
+        //       on-cut artwork fills its slot edge-to-edge. With source
+        //       designed at canvas aspect this is identical to imagecopy
+        //       (no aspect distortion). Title overlays ON TOP of the
+        //       content base layer in the z-order.
+        //   (c) end.png is STRETCH-fit symmetrically into
+        //       [$bboxRightPx - $rightWidth..$bboxRightPx], y=0, again
+        //       on top of the content base layer.
+        //
+        // Z-order: content base layer (lowest), then title and end
+        // overlays on top. Content therefore DOES bleed under title/end
+        // (a couple pixels of overlap inside the slot is intentional —
+        // any alpha-fringed pixels at the title/end cut boundaries are
+        // hidden by the slot-filling overlay), but content STAYS the
+        // single repeating seam.
         //
         // Canvas-height = max(heights of all 3 parts) capped at
         // MAX_STYLE_HEIGHT and floored at 32 — a tall hidden accent
-        // in either title or end still drives the canvas height
-        // without getting vertically cropped (CONTAIN-fit keeps
-        // aspect). Flag is runtime-only; source meta.json keeps
-        // recorded splits for full re-edit-ability when the flag
-        // is later untoggled. Defaults to false to preserve the
-        // unflagged recompile contract for legacy themes.
+        // in title or end still drives the canvas height with no
+        // vertical crop. Flag is runtime-only; source meta.json keeps
+        // recorded splits for full re-edit-ability when the flag is
+        // later untoggled. Defaults to false to preserve the unflagged
+        // recompile contract for legacy themes.
         bool $dynamicContentStretch = false,
     ): array|false {
         foreach ([$themeDir, $outputPng, $outputJson, $originalJson] as $writablePath) {
@@ -267,7 +274,7 @@ class ThemeImageSlicer
                 // recompile's mtime-based cache
                 // TickerStyleRepository::compileThemes() additionally
                 // busts on the strategy-named
-                // `_compiled_under_dynamic_stretch_content_only_alpha_trim`
+                // `_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay`
                 // marker we write into compiled meta.json below —
                 // legacy metas (including those carrying the older
                 // `_compiled_under_dynamic_stretch_left_to_right_clip_last`,
@@ -275,8 +282,9 @@ class ThemeImageSlicer
                 // `_compiled_under_dynamic_stretch_canvas_wide_alpha_trim`,
                 // `_compiled_under_dynamic_stretch_seamless_extend`,
                 // `_compiled_under_dynamic_stretch_alpha_trim_repeat_tile`,
-                // `_compiled_under_dynamic_stretch_single_blit`, and
-                // bilateral-cut-stage strategies'
+                // `_compiled_under_dynamic_stretch_single_blit`,
+                // `_compiled_under_dynamic_stretch_content_only_alpha_trim`,
+                // and bilateral-cut-stage strategies'
                 // `_compiled_under_dynamic_override` markers) lack
                 // the current strategy's key and are forced to
                 // recompile exactly once on the first deploy of the
@@ -485,21 +493,45 @@ class ThemeImageSlicer
                 // dragged the handles and `dynamic_content_stretch`
                 // collapses the end slot cleanly to the bbox right edge.
                 if ($dynamicContentStretch) {
-                    // Canvas-wide seamless-extend mode. The user's
-                    // narrow 2D bbox is treated as a SOURCE-design
-                    // hint rather than an OUTPUT constraint: all
-                    // three parts are alpha-trimmed to their visible
-                    // opaque sub-rectangles, then:
-                    //   (i)  content.png tiles across the middle
-                    //        region of the canvas between title slot
-                    //        and end slot ($leftWidth .. $effCanvasW
-                    //        - $rightWidth),
-                    //   (ii) title.png is right-anchored inside the
-                    //        title slot so its visible right edge
-                    //        touches the first content tile seam,
-                    //   (iii) end.png is left-anchored inside the
-                    //        end slot so its visible left edge
-                    //        touches the last content tile seam.
+                    // Canvas-wide tile + STRETCH-overlay mode. The
+                    // user's split percentages + bbox are
+                    // SOURCE-design hints describing where the
+                    // artifacts live; the rendered output always
+                    // spans the full canvas width. Three layers in
+                    // z-order, painted in this order:
+                    //   (i)  content.png is alpha-trimmed for clean
+                    //        tile seams and tiled horizontally across
+                    //        the FULL canvas (0..$effectiveCanvasWidth)
+                    //        via the while-loop below. Each visible
+                    //        tile has height = $height and width =
+                    //        $scaledTileW (sized so tile-aspect
+                    //        matches the canvas-aspect), so when the
+                    //        source was designed at canvas aspect
+                    //        the tile is full-canvas-height tall.
+                    //   (ii) title.png is STRETCH-fit into its slot
+                    //        [$bboxLeftPx..$bboxLeftPx + $leftWidth]
+                    //        at y=0, ON TOP of the content base
+                    //        layer. With source-aspect == canvas
+                    //        aspect, STRETCH gives pixel-identical
+                    //        output to imagecopy (no aspect
+                    //        distortion). When source-aspect
+                    //        differs, STRETCH keeps the slot fully
+                    //        covered edge-to-edge so transparent
+                    //        padding cannot eat into the content
+                    //        region (documented constraint: source
+                    //        should be designed at canvas aspect for
+                    //        pixel-exact rendering).
+                    //   (iii) end.png is STRETCH-fit symmetrically
+                    //        into [$bboxRightPx - $rightWidth..
+                    //        $bboxRightPx] at y=0, again ON TOP of
+                    //        the content base layer. Same
+                    //        source-aspect constraint applies.
+                    // Content tiles pass UNDERNEATH title and
+                    // end; their visible composition reads as
+                    // content everywhere except where title/end
+                    // cover their slots, so the user's "title ->
+                    // content -> end" intent is preserved with
+                    // the seamless repeating strip in between.
                     // The user explicitly stated content MUST lie
                     // before end (not straddle through end's slot),
                     // and these three layers guarantee that — end's
@@ -548,62 +580,72 @@ class ThemeImageSlicer
                     $leftSource = $leftImg;
                     $rightSource = $rightImg;
 
-                    // Bbox-anchored: tile bounds = bbox middle
-                    // ($bboxLeftPx + $leftWidth ..
-                    // $bboxRightPx - $rightWidth); outside-bbox canvas
-                    // stays transparent. See commit history for the
-                    // canvas-wide round that this replaced.
+                    // Canvas-wide tile bounds under
+                    // dynamic_content_stretch: content spans
+                    // 0..$effectiveCanvasWidth so the artist sees a
+                    // truly seamless repeating strip rather than a
+                    // bbox-middle band. title.png and end.png are
+                    // STRETCH-blitted ON TOP of the content base
+                    // layer in the overlay blits below; their slot
+                    // widths are unchanged but content tiles pass
+                    // through underneath, so the visible composition
+                    // is content|{title overlay}|content|{end overlay}.
+                    // See commit history for the bbox-bounded round
+                    // this replaced.
                     $tileSrcW = max(1, imagesx($tileSource));
                     $tileSrcH = max(1, imagesy($tileSource));
                     $scaledTileW = max(1, (int) round($tileSrcW * ($height / $tileSrcH)));
 
-                    $tileStartX = $bboxLeftPx + $leftWidth;
-                    $tileEndX = max($tileStartX, $bboxRightPx - $rightWidth);
-                    if ($tileEndX > $tileStartX) {
-                        // Fill left-to-right up to $tileEndX with no
-                        // special-case last tile. The trailing visible
-                        // tile is partial (left-clipped source) when the
-                        // remaining space is shorter than $scaledTileW;
-                        // $tileX advances by $drawW each iteration so
-                        // the partial lands precisely at $tileEndX with
-                        // no pixel gap before end.png's left edge. The
-                        // previous round reserved a separate right-
-                        // anchored full tile at the boundary which made
-                        // the last visible tile a clean full repetition,
-                        // but visually duplicated end.png's right-side
-                        // chevron — the user reported that as "end is
-                        // repeating" because the right-anchored last
-                        // chevron-hybrid tile sat flush against end.png
-                        // and read as a second end accent.
-                        $tileX = $tileStartX;
-                        while ($tileX < $tileEndX) {
-                            $drawW = min($scaledTileW, $tileEndX - $tileX);
-                            $isPartial = $drawW < $scaledTileW;
-                            $srcClipW = $isPartial
-                                ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
-                                : $tileSrcW;
-                            imagecopyresampled(
-                                $canvas, $tileSource, $tileX, 0, 0, 0,
-                                $drawW, $height, $srcClipW, $tileSrcH,
-                            );
-                            $tileX += $drawW;
-                        }
+                    $tileStartX = 0;
+                    $tileEndX = $effectiveCanvasWidth;
+                    // Fill left-to-right up to $tileEndX with no
+                    // special-case last tile. The trailing visible
+                    // tile is partial (left-clipped source) when the
+                    // remaining space is shorter than $scaledTileW;
+                    // $tileX advances by $drawW each iteration so
+                    // the partial lands precisely at $tileEndX with
+                    // no pixel gap before end.png's left edge. The
+                    // previous round — and the original dyn=true
+                    // branch — wrapped this in `if ($tileEndX >
+                    // $tileStartX)`, but with canvas-wide tile
+                    // bounds ($tileStartX = 0, $tileEndX =
+                    // $effectiveCanvasWidth, canvas width always >
+                    // 0) that condition is structurally dead and
+                    // trips PHPStan's `greater.alwaysTrue` warning.
+                    // The while-loop guards `min($scaledTileW,
+                    // $tileEndX - $tileX)` so a degenerate $scaledTileW
+                    // still terminates correctly.
+                    $tileX = $tileStartX;
+                    while ($tileX < $tileEndX) {
+                        $drawW = min($scaledTileW, $tileEndX - $tileX);
+                        $isPartial = $drawW < $scaledTileW;
+                        $srcClipW = $isPartial
+                            ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
+                            : $tileSrcW;
+                        imagecopyresampled(
+                            $canvas, $tileSource, $tileX, 0, 0, 0,
+                            $drawW, $height, $srcClipW, $tileSrcH,
+                        );
+                        $tileX += $drawW;
                     }
 
-                    // Reuse outer-scope title/end fit (computed above
-                    // the if-block for the metrics on UN-trimmed
-                    // source dimensions) since title+end are NOT
-                    // alpha-trimmed under this strategy ($leftSource
-                    // === $leftImg, $rightSource === $rightImg). The
-                    // outer $leftFit already does asymmetric
-                    // right-anchor: $leftFit[2] = $leftWidth -
-                    // $leftFit[0]. The outer $rightFit already does
-                    // asymmetric left-anchor: $rightFit[2] = 0.
-                    $leftFitW = $leftFit[0];
-                    $leftFitH = $leftFit[1];
-                    $leftBlitX = $bboxLeftPx + $leftWidth - $leftFitW;
-                    $rightFitW = $rightFit[0];
-                    $rightFitH = $rightFit[1];
+                    // STRETCH-fit title + end into their exact
+                    // canvas-slot widths at y=0 (no outer-scope
+                    // CONTAIN fit, no asymmetric right/left anchor).
+                    // With source-aspect == canvas-aspect this
+                    // produces the same pixel result as imagecopy;
+                    // STRETCH-fill keeps the slot fully covered
+                    // edge-to-edge so the content tile underneath
+                    // is completely hidden where title/end sit.
+                    // $leftSource / $rightSource are NOT
+                    // alpha-trimmed (matching the flag=false path's
+                    // "use source as-is" semantic so designer fades
+                    // can still bleed out at the canvas edges).
+                    $leftFitW = $leftWidth;
+                    $leftFitH = $height;
+                    $leftBlitX = $bboxLeftPx;
+                    $rightFitW = $rightWidth;
+                    $rightFitH = $height;
                     $rightBlitX = $bboxRightPx - $rightWidth;
 
                     $this->blitResized($canvas, $leftSource, $leftBlitX, 0, $leftFitW, $leftFitH);
@@ -664,9 +706,23 @@ class ThemeImageSlicer
                 // the re-toggle as a no-op and leaving stale
                 // right-only-OFF-shrunken PNGs in place after
                 // the artist flips the flag back on.
+                // Marker key bumped from the previous
+                // `_compiled_under_dynamic_stretch_content_only_alpha_trim`
+                // strategy to the new
+                // `_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay`
+                // strategy. TickerStyleRepository::compileThemes()
+                // busts the recompile cache on missing marker, so
+                // every theme cached under the OLD strategy (or
+                // under no marker at all) gets a single forced
+                // rebuild on first deploy of this code. The
+                // additional unset of the OLD marker on the
+                // else-branch ensures that an artist toggling the
+                // flag off then on observes the change rather than
+                // masking it as no-op.
                 if ($dynamicContentStretch) {
-                    $meta['_compiled_under_dynamic_stretch_content_only_alpha_trim'] = true;
+                    $meta['_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay'] = true;
                 } else {
+                    unset($meta['_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay']);
                     unset($meta['_compiled_under_dynamic_stretch_content_only_alpha_trim']);
                 }
 

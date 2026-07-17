@@ -584,19 +584,24 @@ class TickerStyleRepository
                 // Override-shape detection: comparing the boolean
                 // alone misses SEMANTIC changes to the override
                 // across deploys (right-only → bilateral →
-                // single-blit content is itself invisible to a
-                // flag comparison). ThemeImageSlicer writes the
+                // single-blit content → canvas-wide-tile +
+                // STRETCH-overlay is itself invisible to a flag
+                // comparison). ThemeImageSlicer writes the
                 // strategy-named
-                // `_compiled_under_dynamic_stretch_single_blit`
+                // `_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay`
                 // marker into compiled meta.json whenever the
-                // override fires under the current single-blit
+                // override fires under the current canvas-wide
                 // strategy, so a one-shot recompile is forced
                 // here for any theme that carries `dynamic=true`
                 // in source meta but the previously-compiled
                 // meta lacks the marker key for the current
                 // strategy. The marker key is bumped on every
-                // strategy change (the previous bilateral-cut-
-                // stage strategy wrote a different key,
+                // strategy change (the previous single-blit
+                // strategy wrote
+                // `_compiled_under_dynamic_stretch_content_only_alpha_trim`,
+                // and earlier strategies wrote their own
+                // `_compiled_under_dynamic_stretch_*` keys, plus
+                // the bilateral-cut-stage strategy wrote
                 // `_compiled_under_dynamic_override`) — without
                 // that, a deploy that changes the override's
                 // behavior would leave previously-compiled
@@ -616,7 +621,7 @@ class TickerStyleRepository
                     } elseif (
                         $sourceDynamic
                         && is_array($compiledMeta)
-                        && ! array_key_exists('_compiled_under_dynamic_stretch_content_only_alpha_trim', $compiledMeta)
+                        && ! array_key_exists('_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay', $compiledMeta)
                     ) {
                         // Legacy transition: the compiled meta was
                         // produced either before the current
