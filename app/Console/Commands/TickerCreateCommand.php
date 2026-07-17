@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\TickerGeometryHelpers;
 use App\Http\Controllers\TickerDashboardController;
 use App\Models\TickerSetting;
 use App\Models\User;
@@ -14,8 +15,8 @@ use Throwable;
 
 /**
  * Create a ticker theme on disk from the CLI, mirroring the controller flow
- * that {@see TickerDashboardController::slice()} drives in the theme builder
- * UI. Two input modes are supported:
+ * that {@see TickerDashboardController::slice()} drives
+ * in the theme builder UI. Two input modes are supported:
  *
  *   --source=<png>      Single-image flow. Calls ThemeImageSlicer::sliceFromSingle()
  *                       which bbox-crops and splits the source into
@@ -43,6 +44,8 @@ use Throwable;
  */
 class TickerCreateCommand extends Command
 {
+    use TickerGeometryHelpers;
+
     protected $signature = 'ticker:create
         {slug : Theme slug (will be normalized via Str::slug; underscores and spaces become hyphens)}
         {--source= : Single PNG source \u2014 runs sliceFromSingle() with the given bbox/splits}
@@ -96,7 +99,7 @@ class TickerCreateCommand extends Command
             return self::FAILURE;
         }
 
-        // Geometry parsing — required options return null instead of throwing
+        // Geometry parsing \u2014 required options return null instead of throwing
         // so handle() can return a clean FAILURE without leaking a stacktrace
         // to artisan on user input errors.
         $topPct = $this->pctOption('top', 0.0);
@@ -131,7 +134,6 @@ class TickerCreateCommand extends Command
             $split2 = $rightPct;
         }
 
-        // File-system guards
         $themeDir = public_path("ticker-styles/{$themeSlug}");
         $themeJson = $themeDir.'/'.$themeSlug.'.json';
         if (is_dir($themeDir) && ! $this->option('overwrite')) {
@@ -144,7 +146,6 @@ class TickerCreateCommand extends Command
 
         $canvasWidth = $this->tryResolveCanvasWidth();
 
-        // Pipeline dispatch
         if ($mode === 'source') {
             $sliceMetrics = $this->runSingleSourceFlow(
                 $themeImageSlicer, $themeDir, $canvasWidth,
@@ -156,12 +157,6 @@ class TickerCreateCommand extends Command
                 return self::FAILURE;
             }
         } else {
-            // copy-mode: any Throwable from the resolvePartPath calls or
-            // the slice() recompute rolls back the partial directory AND
-            // bubbles loudly so the operator sees the actual error. The
-            // "Cleaned up partial theme" warn only fires for true code
-            // failures — user-input errors are caught here in runCopyFlow
-            // (returning null) and the warn never appears.
             try {
                 $sliceMetrics = $this->runCopyFlow(
                     $themeImageSlicer, $themeDir, $canvasWidth,
@@ -245,7 +240,7 @@ class TickerCreateCommand extends Command
     }
 
     /**
-     * Single-image flow: source PNG → sliceFromSingle writes title/content/end.png
+     * Single-image flow: source PNG \u2192 sliceFromSingle writes title/content/end.png
      * directly into $themeDir and returns the metric array.
      *
      * @return array<string, float|string>|null null on failure (slicer returned false or source missing)
@@ -287,12 +282,8 @@ class TickerCreateCommand extends Command
     }
 
     /**
-     * Copy flow: validate source paths → slice() with outputPng=null to
-     * recompute metrics for the new geometry → write the three PNGs.
-     * The 3 PNGs are written AFTER a successful metrics recompute, so a
-     * half-state (PNGs without validated geometry) can never reach disk
-     * from this method. Caller wraps the whole block in a try/catch to
-     * delete $themeDir on any Throwable.
+     * Copy flow: validate source paths \u2192 slice() with outputPng=null to
+     * recompute metrics for the new geometry \u2192 write the three PNGs.
      *
      * @return array<string, float|string>|null null on failure (slicer returned false, or any source part missing)
      */
@@ -327,11 +318,6 @@ class TickerCreateCommand extends Command
             return null;
         }
 
-        // Recompute metrics first against the new geometry so the live
-        // ticker gets stamp metrics that match the bbox/split the user
-        // just requested. outputPng=null skips the compiled PNG write —
-        // the recompile pass (TickerStyleRepository::all() above) writes
-        // it with its own canvasWidth-aware geometry.
         $sliceMetrics = $slicer->slice(
             $titleSrc,
             $contentSrc,
@@ -451,38 +437,6 @@ class TickerCreateCommand extends Command
         }
 
         return $candidate;
-    }
-
-    private function tryResolveCanvasWidth(): int
-    {
-        $owner = $this->tryResolveOwner();
-        if (! $owner instanceof User) {
-            return ThemeImageSlicer::DEFAULT_CANVAS_WIDTH;
-        }
-
-        $settings = TickerSetting::current($owner);
-        $width = (int) ($settings->canvas_width ?? ThemeImageSlicer::DEFAULT_CANVAS_WIDTH);
-
-        return $width > 0 ? $width : ThemeImageSlicer::DEFAULT_CANVAS_WIDTH;
-    }
-
-    private function resolveOwnerOrFail(): ?User
-    {
-        $owner = $this->tryResolveOwner();
-        if (! $owner instanceof User) {
-            $this->error('No user found in database; refusing to determine workspace owner. Run inside the app or seed a user first.');
-
-            return null;
-        }
-
-        return $owner;
-    }
-
-    private function tryResolveOwner(): ?User
-    {
-        $owner = User::query()->whereNull('owner_id')->oldest()->first();
-
-        return $owner instanceof User ? $owner : User::query()->oldest()->first();
     }
 
     private function cleanupPartialTheme(string $themeDir): void
