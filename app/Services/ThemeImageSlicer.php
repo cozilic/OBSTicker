@@ -443,28 +443,22 @@ class ThemeImageSlicer
                 'end_stamp_width_pct' => $this->percentValue($endCanvasWidth, $effectiveCanvasWidth),
             ];
 
-            // Under the bilateral dynamic_content_stretch
-            // override, the title and end PNGs are CONTAIN-fitted
-            // into 1px-wide slots at the canvas edges so they read
-            // as nearly-invisible specks. visibleBounds() still
-            // returns their opaque minority (a few source pixels),
-            // which would drive the live ticker's label overlay
-            // (consumed as `title_stamp_*_pct` / `end_stamp_*_pct`
-            // in resources/js/pages/ticker/show.tsx and
-            // resources/js/components/ticker/theme-skin-preview.tsx)
-            // to fit text into a hairline-wide rect. Zero the four
-            // visible-stamp metrics so the consumer-side `typeof
-            // === 'number' ? : fallback` chain takes the
-            // "no visible stamp" branch cleanly. The fallback path
-            // already exists (legacy themes without these fields),
-            // so this stays consistent with how unmeasured themes
-            // were always rendered.
-            if ($dynamicContentStretch) {
-                $metrics['title_stamp_left_pct'] = 0.0;
-                $metrics['title_stamp_width_pct'] = 0.0;
-                $metrics['end_stamp_left_pct'] = 0.0;
-                $metrics['end_stamp_width_pct'] = 0.0;
-            }
+            // Stamp metrics: under dynamic_content_stretch the
+            // title/end PNGs are still rendered through the same
+            // outer-scope CONTAIN + asymmetric anchor as the
+            // unflagged path, so the alpha-aware visibleBounds math
+            // already produced above is the correct rect describing
+            // where the live-label overlay in
+            // resources/js/pages/ticker/show.tsx should sit. We do
+            // NOT zero out the metrics here (the prior
+            // canvas-wide-stretch contract did, because that
+            // contract CONTAIN-fitted title/end into ~1px slots at
+            // the canvas edges — a degenerate rect that the live
+            // ticker interpreted as "no visible stamp"). The native-
+            // tile contract preserves usable stamp coordinates so
+            // the live label still aligns next to the visible
+            // title/end artwork through the show.tsx
+            // `manualLabelBox` chain.
 
             if ($outputPng !== null) {
                 File::ensureDirectoryExists(dirname($outputPng));
@@ -594,7 +588,34 @@ class ThemeImageSlicer
                     // this replaced.
                     $tileSrcW = max(1, imagesx($tileSource));
                     $tileSrcH = max(1, imagesy($tileSource));
-                    $scaledTileW = max(1, (int) round($tileSrcW * ($height / $tileSrcH)));
+                    // Native-tile mode under dynamic_content_stretch:
+                    // render content.png at its NATURAL w × h rather
+                    // than vertically squashing it into $height. The
+                    // earlier STRETCH-to-canvas-H math turned a
+                    // 1350×256 source into a single 791×150 tile
+                    // (one full-canvas chevron pattern). At native
+                    // dimensions the same 1350×256 source tiles ~1.4
+                    // times across a 1920px canvas, so the artist
+                    // sees ~2 chevron-pattern repetitions instead of
+                    // one giant squashed bar.
+                    //
+                    // Vertical placement: when $tileSrcH <= $height
+                    // the tile is centered inside the canvas (visible
+                    // artwork stays clear of the top/bottom transparent
+                    // gutters of a taller canvas). When $tileSrcH >
+                    // $height the tile overflows the canvas bottom;
+                    // max(0, …) clamps the y-offset to 0 so the tile
+                    // top-aligns and imagecopyresampled clips at
+                    // canvas-bottom — the designer's bottom-anchored
+                    // art is then truncated silently. Documented
+                    // limitation: source content.png should be
+                    // designed at canvas-H or shorter to avoid
+                    // bottom-clipping, which matches how the
+                    // unflagged path's y=0 top-align already treats
+                    // taller source parts.
+                    $scaledTileW = $tileSrcW;
+                    $scaledTileH = $tileSrcH;
+                    $tileY = (int) max(0, round(($height - $tileSrcH) / 2));
 
                     $tileStartX = 0;
                     $tileEndX = $effectiveCanvasWidth;
@@ -623,33 +644,29 @@ class ThemeImageSlicer
                             ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
                             : $tileSrcW;
                         imagecopyresampled(
-                            $canvas, $tileSource, $tileX, 0, 0, 0,
-                            $drawW, $height, $srcClipW, $tileSrcH,
+                            $canvas, $tileSource, $tileX, $tileY, 0, 0,
+                            $drawW, $scaledTileH, $srcClipW, $tileSrcH,
                         );
                         $tileX += $drawW;
                     }
 
-                    // STRETCH-fit title + end into their exact
-                    // canvas-slot widths at y=0 (no outer-scope
-                    // CONTAIN fit, no asymmetric right/left anchor).
-                    // With source-aspect == canvas-aspect this
-                    // produces the same pixel result as imagecopy;
-                    // STRETCH-fill keeps the slot fully covered
-                    // edge-to-edge so the content tile underneath
-                    // is completely hidden where title/end sit.
-                    // $leftSource / $rightSource are NOT
-                    // alpha-trimmed (matching the flag=false path's
-                    // "use source as-is" semantic so designer fades
-                    // can still bleed out at the canvas edges).
-                    $leftFitW = $leftWidth;
-                    $leftFitH = $height;
-                    $leftBlitX = $bboxLeftPx;
-                    $rightFitW = $rightWidth;
-                    $rightFitH = $height;
-                    $rightBlitX = $bboxRightPx - $rightWidth;
-
-                    $this->blitResized($canvas, $leftSource, $leftBlitX, 0, $leftFitW, $leftFitH);
-                    $this->blitResized($canvas, $rightSource, $rightBlitX, 0, $rightFitW, $rightFitH);
+                    // CONTAIN + asymmetric anchor (matches the
+                    // unflagged path) for title.png and end.png —
+                    // the outer-scope $leftFit / $rightFit were
+                    // already run with aspect-preserving CONTAIN
+                    // math + slot-edge anchoring so the visible
+                    // stamp lands flush against the divider lines.
+                    // Reusing them here keeps the artwork
+                    // aspect-correct (no STRETCH-squash when the
+                    // source aspect differs from canvas aspect), and
+                    // keeps the visibleBounds-derived stamp metrics
+                    // bit-identical between this branch and the
+                    // unflagged branch — so $leftSource is blitted
+                    // unmodified (no per-branch alpha-trim) and
+                    // designer fades bleed out at the canvas edges
+                    // exactly as in the flag=false render.
+                    $this->blitResized($canvas, $leftSource, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
+                    $this->blitResized($canvas, $rightSource, $bboxRightPx - $rightWidth + $rightFit[2], 0, $rightFit[0], $rightFit[1]);
 
                     if ($tileIsCloned) {
                         imagedestroy($tileSource);
@@ -720,8 +737,23 @@ class ThemeImageSlicer
                 // flag off then on observes the change rather than
                 // masking it as no-op.
                 if ($dynamicContentStretch) {
-                    $meta['_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay'] = true;
+                    // Bumped from the prior
+                    // `_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay`
+                    // strategy to the new
+                    // `_compiled_under_dynamic_stretch_content_native_tile_contain_overlay`
+                    // strategy. The earlier strategy scaled content
+                    // tiles to canvas-H (single full-canvas bar —
+                    // the failure mode the user reported). The new
+                    // strategy tiles at native w × h (visible
+                    // repeating chevron pattern) and reuses the
+                    // outer-scope CONTAIN title/end blit. Marker
+                    // rename is STRATEGY-NAMED so legacy compiled
+                    // metas are guaranteed to recompile on first
+                    // deploy of this code, never silently serving a
+                    // stale PNG for the same source flag.
+                    $meta['_compiled_under_dynamic_stretch_content_native_tile_contain_overlay'] = true;
                 } else {
+                    unset($meta['_compiled_under_dynamic_stretch_content_native_tile_contain_overlay']);
                     unset($meta['_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay']);
                     unset($meta['_compiled_under_dynamic_stretch_content_only_alpha_trim']);
                 }
