@@ -114,16 +114,9 @@ class ThemeImageSlicer
         ?float $leftPct = null,
         ?float $rightPct = null,
         bool $dynamicContentStretch = false,
-    ): array|false {
+    ): array<string, mixed>|false {
         // Path-traversal guard for any caller-provided writable path.
         foreach ([$themeDir, $outputPng, $outputJson, $originalJson] as $writablePath) {
-            if ($writablePath === null) {
-                continue;
-            }
-            if (str_contains($writablePath, '..') || str_contains($writablePath, "\0")) {
-                return false;
-            }
-        }
             if ($writablePath === null) {
                 continue;
             }
@@ -421,7 +414,7 @@ class ThemeImageSlicer
         ?float $leftPct,
         ?float $rightPct,
         bool $dynamicContentStretch,
-    ): array {
+    ): array<string, mixed> {
         $effectiveWidth = max(1, $canvasWidth ?? self::DEFAULT_CANVAS_WIDTH);
 
         // Slot positions in canvas pixels. Testable in isolation via
