@@ -612,25 +612,24 @@ class TickerStyleRepository
                         (string) file_get_contents($outputJson),
                         true,
                     );
-                    $sourceDynamic = (bool) ($sourceMeta['dynamic_content_stretch'] ?? false);
-                    $compiledDynamic = is_array($compiledMeta)
-                        ? (bool) ($compiledMeta['dynamic_content_stretch'] ?? false)
-                        : false;
-                    if ($sourceDynamic !== $compiledDynamic) {
-                        $needsCompile = true;
-                    } elseif (
-                        $sourceDynamic
-                        && is_array($compiledMeta)
-                        && ! array_key_exists('_compiled_under_dynamic_stretch_content_slot_native_tile_contain_overlay', $compiledMeta)
-                    ) {
-                        // Legacy transition: the compiled meta was
-                        // produced either before the current
-                        // strategy landed OR under an older
-                        // strategy whose marker key differs.
-                        // Force a one-shot recompile; the next
-                        // write will carry the current strategy's
-                        // marker and stay in sync until the
-                        // artist actually toggles the flag again.
+                    // Hash-based recompile detection — replaces the
+                    // prior `_compiled_under_dynamic_stretch_*`
+                    // marker-key string gnome AND the boolean
+                    // comparison of `dynamic_content_stretch` between
+                    // source and compiled meta. A single geometry
+                    // hash covers: any bbox/split-percentage change,
+                    // the flag itself, the top/bottom bbox, and any
+                    // version bump in ThemeCacheBuster::VERSION
+                    // invalidates every cached theme globally — useful
+                    // when the slicer's pixel-output contract shifts.
+                    // $sourceMeta is passed as-is; non-geometry fields
+                    // (name, author, label_*, etc.) are excluded from
+                    // the hash internally so label-only renames don't
+                    // trigger spurious recompiles.
+                    if (ThemeCacheBuster::shouldRecompile(
+                        is_array($compiledMeta) ? $compiledMeta : [],
+                        $sourceMeta,
+                    )) {
                         $needsCompile = true;
                     }
                 }
@@ -763,6 +762,23 @@ class TickerStyleRepository
                             // refreshes the visible-stamp geometry.
                             $themeMeta = array_merge($themeMeta, $persistedMetrics);
                         }
+
+                        // Persist the geometry_hash into compiled meta
+                        // alongside the visible-stamp metrics so
+                        // ThemeCacheBuster::shouldRecompile() has a
+                        // field to compare against on the next read.
+                        // The hash is computed from $sourceMeta
+                        // (geometry-only — name, author, label_*, etc.
+                        // are excluded by ThemeCacheBuster::generateHash)
+                        // so it stays stable across label-only renames.
+                        // This is also the entry-point that strips any
+                        // historical `_compiled_under_dynamic_stretch_*`
+                        // marker-key strings present in legacy compiled
+                        // meta.json files (handled by slicer's
+                        // writeCompiledJson when slice() receives
+                        // $outputJson; here we skip that path because
+                        // compileThemes owns the merged view it writes).
+                        $themeMeta['geometry_hash'] = ThemeCacheBuster::generateHash($sourceMeta);
 
                         // Always emit the merged JSON on every recompile
                         // so legacy meta.json files migrated through this

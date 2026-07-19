@@ -5,91 +5,101 @@ namespace App\Services;
 use GdImage;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use RuntimeException;
 
+/**
+ * Compile a 3-cut (title/content/end) ticker theme into a single
+ * horizontal canvas strip by slotting each cut into its user-chosen
+ * position on a fixed-dimension canvas.
+ *
+ * # Design (2026-07-18 fresh rewrite)
+ *
+ * The rewrite extracts three concerns into separate, testable units.
+ * Replaces the prior 880-line `slice()` that contained an
+ * `if ($dynamicContentStretch) { ... } else { ... }` committee-decision
+ * branch and accumulated 8 historical `_compiled_under_dynamic_stretch_*`
+ * string-marker-key suffixes across many iterative commits.
+ *
+ *   1. {@see ThemeGeometryMath::calculateSlots()} — pure-math slot
+ *      coordinate calculation. NO GD, NO I/O. Unit-testable without
+ *      any image fixtures.
+ *
+ *   2. {@see self::sliceStatic()} — DEFAULT render: title LEFT-anchored
+ *      CONTAIN in its slot, content STRETCH-fit to fill its slot
+ *      exactly, end RIGHT-anchored CONTAIN in its slot.
+ *
+ *   3. {@see self::sliceRepeating()} — content-aware flag render: same
+ *      title/end placement as static, but content.png is TILED at
+ *      NATIVE w*h inside its slot (multiple repetitions when the slot
+ *      is wider than the source content cut).
+ *
+ * Cache bust detection moved to {@see ThemeCacheBuster}: a hash of
+ * the effective geometry + flag is stored in compiled meta.json, and
+ * any change to inputs triggers a recompile. Replaces the historical
+ * `_compiled_under_dynamic_stretch_*` string-marker-key chain. The
+ * rewrite also opportunistically strips those historical keys from
+ * legacy compiled meta.json on the next write — see
+ * {@see self::writeCompiledJson()}.
+ *
+ * # Public API (preserved for backward compatibility)
+ *
+ * - {@see self::slice()} — called by TickerStyleRepository::compileThemes();
+ *   takes paths to three pre-cut PNGs + geometry args + flag.
+ * - {@see self::sliceFromSingle()} — called by TickerDashboardController +
+ *   CLI commands; takes ONE source PNG + split percentages + flag,
+ *   cuts internally via {@see self::splitToTempPngs()} then routes
+ *   to render pipeline.
+ *
+ * Both public entry points accept the same `$dynamicContentStretch`
+ * flag they have for the past 5+ commits but internally route to
+ * {@see self::sliceStatic()} vs {@see self::sliceRepeating()} via
+ * the private {@see self::sliceLoaded()} orchestrator.
+ */
 class ThemeImageSlicer
 {
     /**
      * Canvas width assumed when no explicit width is provided (e.g. when
-     * {@see TickerStyleRepository::compileThemes()} runs
-     * without a per-owner setting context).
+     * {@see TickerStyleRepository::compileThemes()} runs without a per-
+     * owner setting context, or when the controller uses a fallback).
      */
     public const int DEFAULT_CANVAS_WIDTH = 1920;
 
     /**
-     * Maximum canvas height for a compiled theme. The width-first slot
-     * allocation makes the canvas height the natural result of the
-     * proportional scale, but a single tall part (e.g. a 537px-tall
-     * end.png accent) would otherwise drive the whole ticker to that
-     * height while the title/content sit at 150px. Capping at 150px
-     * keeps the design on a single horizontal "lower-third" line —
-     * any part that would be taller is scaled down to fit, preserving
-     * aspect ratio. The 32px floor still applies below this value so
-     * very thin sources produce a usable canvas.
+     * Maximum canvas height for a compiled theme. Capped so a single
+     * tall accent in one slot cannot drive the whole ticker higher
+     * than a "lower-third" line.
      */
     public const int MAX_STYLE_HEIGHT = 150;
 
     /**
-     * Pixel-level safety floor for {@see self::splitToTempPngs()}. Validation
-     * already enforces a 1% minimum slot width at the controller, but a
-     * single-digit source image combined with two close splits could still
-     * leave a slot a fraction of a pixel wide after {@see round()}. Clamping
-     * to MIN_SLOT_PIXELS keeps {@see imagecrop()} from being asked for a
-     * zero- or negative-width region, which GD silently fails.
+     * Pixel-level safety floor for {@see self::splitToTempPngs()}.
+     * Validation already enforces a 1% minimum slot width upstream,
+     * but a sub-pixel source combined with two close splits could
+     * still produce a zero-pixel region after {@see round()}.
      */
     public const int MIN_SLOT_PIXELS = 4;
 
+    // ===================================================================
+    // PUBLIC ENTRY POINTS — preserved signatures, internal routing only.
+    // ===================================================================
+
     /**
-     * Combine three PNG/JPEG images into a theme by slotting each into the
-     * title/content/end position of a single horizontal canvas. Renamed from
-     * `stitch()` when the adjacent slice-from-single flow was added; the
-     * verb "slice" now refers to the whole pipeline (cut OR slot) rather
-     * than the specific 3-into-1 shape, which keeps the controller and
-     * repository call sites consistent.
+     * Compile three pre-cut PNGs into a single horizontal strip.
      *
-     * The method supports two combined modes:
+     * Public API preserved verbatim from the prior implementation; the
+     * internals now route through {@see self::sliceLoaded()} which
+     * delegates to {@see self::sliceStatic()} or
+     * {@see self::sliceRepeating()} based on `$dynamicContentStretch`.
      *
-     *  - **Commit mode** (controller): when $themeDir is given, the
-     *    three cut-region halves are written into $themeDir as PNGs
-     *    WITHOUT trimming their transparent padding. Doing so used to
-     *    strip designed fades/gutters the user baked into the source's
-     *    cut boundaries, leaving CONTAIN-fit to render the visible
-     *    accent as a tiny corner piece. With the cut boundaries
-     *    derived from the user's split percentages rather than
-     *    imagesx(), the source's transparent padding lands where the
-     *    user designed it. Metrics are returned for the caller to
-     *    persist alongside its own metadata.
-     *
-     *  - **Compile mode** (TickerStyleRepository): when $outputPng and/or
-     *    $outputJson are given, a single horizontal compiled PNG is written
-     *    to $outputPng and a merged JSON (original $originalJson overridden
-     *    by the computed metrics) is written to $outputJson.
-     *
-     * Both modes can be combined in a single call.
-     *
-     * Returns the computed metrics array, or false on failure (bad input,
-     * write target outside an expected directory, etc.).
-     *
-     * @param  array{float, float}|null  $splitPercentages
-     *                                                      Optional [split_1, split_2] percentages from the original
-     *                                                      commit. When non-null, slot widths derive from these
-     *                                                      percentages × canvasWidth rather than from imagesx()
-     *                                                      of the cuts — using the latter would collapse the
-     *                                                      chosen proportions whenever the source had transparent
-     *                                                      padding inside a cut region. Two callers forward this
-     *                                                      argument: TickerStyleRepository::compileThemes
-     *                                                      (recompile read path on every theme load) and
-     *                                                      ThemeImageSlicer::sliceFromSingle (commit + preview
-     *                                                      write path, after the 2026-07-15 alignment fix that
-     *                                                      routed preview/commit through the same absolute-
-     *                                                      percentage math as recompile). When null, the input
-     *                                                      PNGs are treated as a legacy 3-file payload and slot
-     *                                                      widths are derived from imagesx() of the cuts.
      * @return array{
      *     title_stamp_left_pct: float,
      *     title_stamp_width_pct: float,
      *     end_stamp_left_pct: float,
      *     end_stamp_width_pct: float
      * }|false
+     */
+    /**
+     * @param  array{0: float, 1: float}|null  $splitPercentages
      */
     public function slice(
         string $leftPath,
@@ -98,57 +108,25 @@ class ThemeImageSlicer
         ?string $themeDir = null,
         ?int $canvasWidth = null,
         ?string $outputPng = null,
-        ?string $outputJson = null, ?string $originalJson = null,
+        ?string $outputJson = null,
+        ?string $originalJson = null,
         ?array $splitPercentages = null,
         ?float $leftPct = null,
-        ?float $rightPct = null,        // Content-Aware flag — when true (slot-bounded native-tile + CONTAIN overlay):
-        //   (a) content.png is alpha-trimmed for clean tile seams and tiled
-        //       horizontally INSIDE its own canvas-slot at
-        //       [$bboxLeftPx + $leftWidth .. $bboxLeftPx + $leftWidth +
-        //       $middleWidth] (i.e. between the user's split_1 line and
-        //       split_2 line on canvas). The repeating pattern stops
-        //       exactly at split_2 (line 3) so it does not bleed into
-        //       the end slot. The user explicitly described this as
-        //       "title <- split line 1-2 -> content[x N] <- split line
-        //       2-3 -> end" with the content cut repeating only inside
-        //       its own gap.
-        //   (b) title.png uses the outer-scope CONTAIN fit + asymmetric
-        //       right-anchor inside its slot [bboxLeftPx .. bboxLeftPx +
-        //       leftWidth] (line 1 -> line 2), keeping the title artwork
-        //       aspect-correct (no STRETCH-squash when source aspect
-        //       differs from canvas aspect). Title blitted ON TOP of
-        //       the content base layer — but content is slot-bounded
-        //       here so this overlay mostly covers transparent canvas
-        //       (the content tile only paints inside split_1..split_2).
-        //   (c) end.png uses the outer-scope CONTAIN fit + asymmetric
-        //       left-anchor inside its slot [bboxRightPx - rightWidth ..
-        //       bboxRightPx] (line 3 -> line 4), keeping the end
-        //       artwork aspect-correct. Same z-order as title: end sits
-        //       on top of the content base layer.
-        //
-        // Composition visible to the artist:
-        //   line 1-2: title.png (CONTAIN, right-anchored)
-        //   line 2-3: content.png tiled NATIVE-w x NATIVE-h, repeating
-        //             floor(middleWidth / tileSrcW) full tiles + 1 partial;
-        //             centered vertically when tileSrcH <= $height, or
-        //             top-aligned (clipping at canvas-bottom) when overflowing
-        //   line 3-4: end.png (CONTAIN, left-anchored)
-        //
-        // Canvas-height = max(heights of all 3 parts) capped at
-        // MAX_STYLE_HEIGHT and floored at 32 — a tall hidden accent in
-        // title or end still drives the canvas height with no vertical
-        // crop. Flag is runtime-only; source meta.json keeps recorded
-        // splits + bbox for full re-edit-ability in the theme builder
-        // when the flag is later untoggled. Defaults to false to
-        // preserve the unflagged recompile contract for legacy themes.
+        ?float $rightPct = null,
         bool $dynamicContentStretch = false,
     ): array|false {
+        // Path-traversal guard for any caller-provided writable path.
         foreach ([$themeDir, $outputPng, $outputJson, $originalJson] as $writablePath) {
             if ($writablePath === null) {
                 continue;
             }
-
-            // Reject anything that could escape its intended directory.
+            if (str_contains($writablePath, '..') || str_contains($writablePath, "\0")) {
+                return false;
+            }
+        }
+            if ($writablePath === null) {
+                continue;
+            }
             if (str_contains($writablePath, '..') || str_contains($writablePath, "\0")) {
                 return false;
             }
@@ -159,8 +137,6 @@ class ThemeImageSlicer
         $rightImg = $this->loadImage($rightPath);
 
         if (! $leftImg || ! $middleImg || ! $rightImg) {
-            // Free any GdImage resources we successfully allocated before
-            // bailing — otherwise every failed upload leaks memory.
             if ($leftImg instanceof GdImage) {
                 imagedestroy($leftImg);
             }
@@ -172,608 +148,15 @@ class ThemeImageSlicer
             }
 
             return false;
-        }            try {
-            $leftOriginalWidth = imagesx($leftImg);
-            $middleOriginalWidth = imagesx($middleImg);
-            $rightOriginalWidth = imagesx($rightImg);
+        }
 
-            // Alpha-trim every source regardless of commit-vs-recompile
-            // mode. The result drives the title_stamp_*_pct /
-            // end_stamp_*_pct metrics below so they describe where the
-            // VISIBLE OPAQUE artwork lands, not where the SLIDER bbox
-            // lands. A source PNG whose designer baked in transparent
-            // padding around the logo (rounded corners, a fade to
-            // nothing at one edge, etc.) puts that padding INSIDE the
-            // CONTAIN-fit bbox; without alpha-trim the label overlay
-            // ends up centered over the bbox with semi-empty space
-            // inside, which the user reads as "text spills past the
-            // visible artwork". Bbox coordinates are intentionally
-            // preserved for the on-disk PNGs and the compiled output
-            // PNG so the visual stamp keeps rendering inside the
-            // slider over time (the recompile path then has the same
-            // pixel source to copy).
-            $leftBounds = $this->visibleBounds($leftImg);
-            $rightBounds = $this->visibleBounds($rightImg);
-            // Pre-compute content.png's visible bounds so the dynamic-
-            // content-stretch path can alpha-trim the tile at blit
-            // time without re-scanning the pixel array twice. The
-            // trim runs only when dynamic_content_stretch is on, but
-            // the bounds themselves are at most imagesx*imagesy pixels
-            // (cheap for ticker-sized sources) and might be needed
-            // twice — once for $height and once for the trim — so
-            // computing once is the right trade.
-            $middleBounds = $this->visibleBounds($middleImg);
-
-            // Persist the UN-trimmed cut-region halves to $themeDir
-            // whenever the caller asked for them. TickerStyleRepository
-            // ::compileThemes() (the recompile read path) passes
-            // $themeDir=null so this block is a no-op on that path;
-            // the only writer to $themeDir is
-            // {@see self::sliceFromSingle()} via the controller
-            // commit/preview endpoints. Earlier revisions ran an
-            // alpha-crop here that trimmed the on-disk halves to
-            // the visible-bounds rect, but that stripping deleted
-            // deliberate fades/gutters the user designed around the
-            // visible artwork — they were the same transparent
-            // pixels visibleBounds() ignores. Alpha awareness for
-            // the *metrics* happens above via the bounds we're
-            // already holding; the on-disk PNGs stay un-trimmed so
-            // the recompile path sees the same pixel source on every
-            // read.
-            if ($themeDir !== null) {
-                File::ensureDirectoryExists($themeDir);
-
-                // PNG compression level 9 keeps the on-disk theme assets
-                // small without affecting the alpha channel.
-                imagepng($leftImg, $themeDir.'/title.png', 9);
-                imagepng($middleImg, $themeDir.'/content.png', 9);
-                imagepng($rightImg, $themeDir.'/end.png', 9);
-            }
-
-            $effectiveCanvasWidth = max(1, $canvasWidth ?? self::DEFAULT_CANVAS_WIDTH);
-
-            if ($splitPercentages !== null) {
-                // Recompile flow: slot widths come from the user's chosen
-                // split percentages directly. Using imagesx() here would
-                // treat the post-trim dimensions as "pre-trim" widths and
-                // collapse the proportions whenever the source had
-                // transparent padding inside a cut region — the saved
-                // PNGs in this pass are post-trim, and any proportional
-                // math over their widths would compress the canvas space
-                // the designer intentionally left transparent.
-                //
-                // Bbox-aware slot math: pull the slot boundaries inside
-                // the source-painted bbox (left_pct .. right_pct) so the
-                // rendered artwork sits where the designer dragged the
-                // handles instead of bleeding past it. With
-                // `dynamic_content_stretch` on (split_2 == right_pct), the
-                // right-slot width collapses to zero so the user gets
-                // exactly what they previewed in the theme builder.
-                $bboxLeftPct = max(0.0, min(99.99, (float) ($leftPct ?? 0.0)));
-                $bboxRightPct = max($bboxLeftPct + 0.01, min(100.0, (float) ($rightPct ?? 100.0)));
-
-                [$userSplit1, $userSplit2] = $splitPercentages;
-                // Re-clamp splits inside the bbox so an out-of-range stored
-                // value can't push a slot off-canvas. The validator already
-                // enforces these upstream, so this is purely defensive.
-                $userSplit1 = max($bboxLeftPct + 0.01, min($bboxRightPct - 0.01, (float) $userSplit1));
-                $userSplit2 = max($userSplit1 + 0.01, min($bboxRightPct, (float) $userSplit2));
-
-                // runtime-only flag: bbox/splits are NOT mutated here.
-                // Earlier bilateral revisions (slot-math override +
-                // cut-stage override) tried snapping user splits
-                // to 0/100 so middle.png encompassed the whole
-                // source — that pulled artwork the artist designed
-                // outside their recorded cuts into the visible
-                // strip. We now keep the user's recorded splits
-                // both at cut time and in slot math; the
-                // single-blit content blit further down still
-                // DROPS title/end.png from the rendered output.
-                // The artist sees ONLY the content slice (their
-                // recorded split_1..split_2 region) stretched
-                // seam-free across the full canvas.
-                //
-                // Source meta.json keeps the user's recorded
-                // split_1 / split_2 / left_pct / right_pct for
-                // full re-edit-ability in the theme builder when
-                // they later untoggle the flag (untoggling reruns
-                // the recompile through the normal 3-slot path and
-                // restores the original bbox / slot geometry).
-                //
-                // CACHE NOTE: meta.json is not mutated, so the
-                // recompile's mtime-based cache
-                // TickerStyleRepository::compileThemes() additionally
-                // busts on the strategy-named
-                // `_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay`
-                // marker we write into compiled meta.json below —
-                // legacy metas (including those carrying the older
-                // `_compiled_under_dynamic_stretch_left_to_right_clip_last`,
-                // `_compiled_under_dynamic_stretch_right_anchored_last_tile`,
-                // `_compiled_under_dynamic_stretch_canvas_wide_alpha_trim`,
-                // `_compiled_under_dynamic_stretch_seamless_extend`,
-                // `_compiled_under_dynamic_stretch_alpha_trim_repeat_tile`,
-                // `_compiled_under_dynamic_stretch_single_blit`,
-                // `_compiled_under_dynamic_stretch_content_only_alpha_trim`,
-                // and bilateral-cut-stage strategies'
-                // `_compiled_under_dynamic_override` markers) lack
-                // the current strategy's key and are forced to
-                // recompile exactly once on the first deploy of the
-                // new strategy. Marker key is strategy-named so a
-                // bump forces a clean rebuild across all dynamic-
-                // stretched themes.
-
-                // Compute the bbox pixel anchors BEFORE the slot widths so
-                // the residue math below can reference them without PHP
-                // emitting an undefined-variable notice and defaulting the
-                // to zero (which would otherwise collapse the middle blit
-                // and let the right slot overlap the middle). This mirrors
-                // the first-pass branch, which assigns $bboxLeftPx /
-                // $bboxRightPx at the top of its block for the same reason.
-                $bboxLeftPx = (int) round(($bboxLeftPct / 100.0) * $effectiveCanvasWidth);
-                $bboxRightPx = (int) round(($bboxRightPct / 100.0) * $effectiveCanvasWidth);
-
-                $leftWidth = max(1, (int) round((($userSplit1 - $bboxLeftPct) / 100.0) * $effectiveCanvasWidth));
-                $rightWidth = max(1, (int) round((($bboxRightPct - $userSplit2) / 100.0) * $effectiveCanvasWidth));
-                // Middle width is the integer-pixel residue between $bboxLeftPx
-                // and $bboxRightPx (NOT a third independent round()). When the
-                // user picks splits like 14.5%/85.5% at canvas=1920, the
-                // independent rounds produce 278 + 1363 + 278 = 1919 — leaving
-                // a one-pixel transparent column at the middle→right seam,
-                // which the live shell renders as a hairline "black line" at
-                // split_2 (the body color shows through). The residue math
-                // guarantees leftWidth + middleWidth + rightWidth =
-                // $bboxRightPx - $bboxLeftPx exactly, eliminating any seam
-                // drift while keeping $leftWidth/$rightWidth (and the visible
-                // stamp metrics derived from them) bit-identical to before.
-                // The first-pass branch already used this residue pattern;
-                // the recompile branch is now consistent with it.
-                $middleWidth = max(1, $bboxRightPx - $bboxLeftPx - $leftWidth - $rightWidth);
-
-                // Already-trimmed PNGs sit at their natural heights; the
-                // tallest wins, capped at MAX_STYLE_HEIGHT so an oversized
-                // accent cannot stretch the whole ticker, with the 32px
-                // floor still applying for very thin sources. The legacy
-                // max-of-3-parts rule applies under dynamic_content_stretch
-                // too — title and end are blitted (CONTAIN-fit into their
-                // slots) under the flag, so a tall hidden accent in either
-                // can drive the canvas height without getting vertically
-                // cropped.
-                $height = max(32, min(
-                    self::MAX_STYLE_HEIGHT,
-                    (int) round(max(
-                        imagesy($leftImg),
-                        imagesy($middleImg),
-                        imagesy($rightImg),
-                    )),
-                ));
-            } else {
-                // Legacy 3-file fallback (no `$splitPercentages`):
-                // slot widths are derived from imagesx() of each cut
-                // region and allocated proportionally across the
-                // canvas. Used only by the legacy title-/content-/
-                // end.png POST payload in
-                // {@see TickerDashboardController::handleLegacyStitch()},
-                // which moves the three halves onto disk before
-                // calling slice() without forwarding percentages —
-                // preserved here so that legacy uploads keep
-                // rendering without forcing the artist to recompose
-                // through the single-source-image theme builder.
-                // The preview/commit path through
-                // {@see self::sliceFromSingle()} now forwards
-                // [$split1, $split2], so it never reaches this
-                // branch.
-                $bboxLeftPx = 0;
-                $bboxRightPx = $effectiveCanvasWidth;
-                // First-pass flow proportional allocation, keyed off the
-                // ORIGINAL (pre-trim) split widths. Cuts at 20 / 80 produce
-                // slots at 20% / 60% / 20% of the canvas width regardless
-                // of transparent padding inside each cut region.
-                $totalOriginalWidth = max(1, $leftOriginalWidth + $middleOriginalWidth + $rightOriginalWidth);
-                $scaleFactor = $effectiveCanvasWidth / $totalOriginalWidth;
-
-                $leftWidth = max(1, (int) round($leftOriginalWidth * $scaleFactor));
-                $rightWidth = max(1, (int) round($rightOriginalWidth * $scaleFactor));
-                $middleWidth = max(1, $effectiveCanvasWidth - $leftWidth - $rightWidth);
-
-                $height = max(32, min(
-                    self::MAX_STYLE_HEIGHT,
-                    (int) round(max(
-                        imagesy($leftImg),
-                        imagesy($middleImg),
-                        imagesy($rightImg),
-                    )),
-                ));
-            }
-
-            // Fit each part into its slot with asymmetric anchoring so
-            // the stamped bounds align flush against the React dividers:
-            //   • MIDDLE ("content"): STRETCHES into the slot dimensions —
-            //     dynamic region that grows/shrinks with the user's
-            //     dividers. No padding inside the slot.
-            //   • LEFT ("title"): CONTAIN (aspect-preserving), then
-            //     right-anchored against the title→content divider so the
-            //     stamp's right edge touches the divider line. Any
-            //     transparent padding lands on the canvas-left side,
-            //     away from dividers.
-            //   • RIGHT ("end"): CONTAIN (aspect-preserving), then
-            //     left-anchored against the content→end divider so the
-            //     stamp's left edge touches the divider line. Any
-            //     transparent padding lands on the canvas-right side,
-            //     away from dividers.
-            // Without this override the CONTAIN mode centers both title
-            // and end with transparent padding on BOTH sides of the
-            // stamp, so the dividers (slot edges) cross transparent
-            // gutters — the user reads that as "the parts don't sit
-            // together" because the dividers don't actually touch any
-            // opaque content. Edge-anchoring solves this.
-            $leftFit = $this->fitInBox($leftWidth, $height, imagesx($leftImg), imagesy($leftImg), 'contain');
-            $leftFit[2] = $leftWidth - $leftFit[0];  // right-anchor inside title slot
-
-            $middleFit = $this->fitInBox($middleWidth, $height, imagesx($middleImg), imagesy($middleImg), 'stretch');
-
-            $rightFit = $this->fitInBox($rightWidth, $height, imagesx($rightImg), imagesy($rightImg), 'contain');
-            $rightFit[2] = 0;  // left-anchor inside end slot
-
-            // Alpha-aware visible-stamp metrics. CONTAIN-fit alone reports
-            // the BBOX the slot occupies — which is correct for the
-            // compiled PNG pixel painting, but for the live ticker label
-            // overlay we need the position of the VISIBLE OPAQUE artwork
-            // inside that bbox. visibleBounds() excludes pixels whose
-            // alpha is at or above 127 (fully / near-fully transparent) so
-            // source-internal transparent gutters (rounded corners,
-            // designed fades-to-nothing, use of padding around the logo)
-            // shrink the metric rect to where the artwork actually is.
-            // The slot pixel coordinates are reused for the compiled PNG
-            // (the bbox copy is unchanged) — only the *metrics* describing
-            // the stamp to the JS consumer are alpha-trimmed.
-            //
-            // The width and source dimensions are pinned by the caller
-            // and fitInBox() above (>0 always), so dividing straight
-            // through is safe — the redundant zero-guard tripped
-            // PHPStan's always-true comparison check on the prior
-            // defensive form.
-            $leftScale = $leftFit[0] / imagesx($leftImg);
-            $rightScale = $rightFit[0] / imagesx($rightImg);
-            $leftVisibleSrc = max(1, $leftBounds['right'] - $leftBounds['left'] + 1);
-            $leftVisibleXInSlot = $leftBounds['left'] * $leftScale;
-            $rightVisibleSrc = max(1, $rightBounds['right'] - $rightBounds['left'] + 1);
-            $rightVisibleXInSlot = $rightBounds['left'] * $rightScale;
-
-            $titleCanvasX = $bboxLeftPx + $leftFit[2] + $leftVisibleXInSlot;
-            $titleCanvasWidth = $leftVisibleSrc * $leftScale;
-            // End canvas X anchors backwards from the bbox right edge (or
-            // the canvas right edge on the first-pass flow).
-            $endCanvasX = $bboxRightPx - $rightWidth + $rightFit[2] + $rightVisibleXInSlot;
-            $endCanvasWidth = $rightVisibleSrc * $rightScale;
-
-            $metrics = [
-                'title_stamp_left_pct' => $this->percentValue($titleCanvasX, $effectiveCanvasWidth),
-                'title_stamp_width_pct' => $this->percentValue($titleCanvasWidth, $effectiveCanvasWidth),
-                'end_stamp_left_pct' => $this->percentValue($endCanvasX, $effectiveCanvasWidth),
-                'end_stamp_width_pct' => $this->percentValue($endCanvasWidth, $effectiveCanvasWidth),
-            ];
-
-            // Stamp metrics: under dynamic_content_stretch the
-            // title/end PNGs are still rendered through the same
-            // outer-scope CONTAIN + asymmetric anchor as the
-            // unflagged path, so the alpha-aware visibleBounds math
-            // already produced above is the correct rect describing
-            // where the live-label overlay in
-            // resources/js/pages/ticker/show.tsx should sit. We do
-            // NOT zero out the metrics here (the prior
-            // canvas-wide-stretch contract did, because that
-            // contract CONTAIN-fitted title/end into ~1px slots at
-            // the canvas edges — a degenerate rect that the live
-            // ticker interpreted as "no visible stamp"). The native-
-            // tile contract preserves usable stamp coordinates so
-            // the live label still aligns next to the visible
-            // title/end artwork through the show.tsx
-            // `manualLabelBox` chain.
-
-            if ($outputPng !== null) {
-                File::ensureDirectoryExists(dirname($outputPng));
-
-                $canvas = imagecreatetruecolor($effectiveCanvasWidth, max(1, $height));
-                imagealphablending($canvas, false);
-                imagesavealpha($canvas, true);
-                $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
-                if ($transparent === false) {
-                    imagedestroy($canvas);
-
-                    return false;
-                }
-                imagefilledrectangle($canvas, 0, 0, $effectiveCanvasWidth, $height, $transparent);
-
-                // Top-align all parts so the design forms a single horizontal
-                // bar on the same y. Vertical centering would put shorter
-                // parts (e.g. a wide-but-short content strip) at a
-                // different y than the title/end, which looks broken in a
-                // ticker. fitInBox() still computes the horizontal
-                // centering offset via $leftFit[2] etc. so the parts stay
-                // centered within their slot WIDTHS; we just ignore its
-                // partY and pin everything to y=0.
-                // Slots are anchored inside the bbox range, not at the
-                // canvas edges, so artwork sits where the designer
-                // dragged the handles and `dynamic_content_stretch`
-                // collapses the end slot cleanly to the bbox right edge.
-                if ($dynamicContentStretch) {
-                    // Slot-bounded native-tile + CONTAIN-overlay
-                    // mode. The user's split percentages + bbox are
-                    // SOURCE-design hints describing where the
-                    // artifacts live; the rendered output keeps the
-                    // user's three slots (title/content/end) at the
-                    // exact pixel positions, and under the flag the
-                    // CONTENT slot is filled by NATIVE-sized
-                    // content.png tiles repeating inside it, instead
-                    // of being STRETCH-compressed to fill the slot
-                    // (which is the unflagged branch's behavior).
-                    // Three layers in z-order:
-                    //   (i)  content.png is alpha-trimmed for clean
-                    //        tile seams and tiled horizontally INSIDE
-                    //        its own slot at canvas-x
-                    //        [$tileStartX .. $tileEndX] (which IS
-                    //        [split_1.x .. split_2.x] on canvas), at
-                    //        native w x native h, vertically centered
-                    //        when it fits / top-aligned (clipping at
-                    //        canvas-bottom) when overflowing.
-                    //   (ii) title.png is CONTAIN-blitted into its
-                    //        slot [bboxLeftPx .. bboxLeftPx + leftWidth]
-                    //        at y=0 (same shape as unflagged path),
-                    //        on top of any transparent canvas in
-                    //        that range — content tiles do not
-                    //        overlap line 1-2 because tileStartX
-                    //        starts at split_1.
-                    //   (iii) end.png is CONTAIN-blitted into its
-                    //        slot [bboxRightPx - rightWidth .. bboxRightPx]
-                    //        at y=0, on top of any transparent canvas
-                    //        in that range — content tiles do not
-                    //        overlap line 3-4 because tileEndX ends
-                    //        at split_2 (right edge of content slot).
-                    //
-                    // The visible composition is therefore
-                    // 1-2 / [content × N] / 3-4 — repeating content
-                    // sits between the two dividers and doesn't
-                    // bleed past them, which is exactly the user's
-                    // desired "title -> content -> content -> content
-                    // -> end" composition.
-                    //
-                    // ALL THREE inputs (leftImg/rightImg/middleImg)
-                    // are produced by the cut stage
-                    // (sliceFromSingle -> splitToTempPngs) and the
-                    // original ungrown PNGs are also written to disk
-                    // by the commit block earlier in this method, so
-                    // re-edits + flag toggles keep the source PNGs.
-
-                    // Alpha-trim content.png for clean tile seams.
-                    $tileSource = $middleImg;
-                    $tileIsCloned = false;
-                    $midSrcW = imagesx($middleImg);
-                    $midSrcH = imagesy($middleImg);
-                    if (
-                        $middleBounds['left'] > 0
-                        || $middleBounds['top'] > 0
-                        || $middleBounds['right'] < $midSrcW - 1
-                        || $middleBounds['bottom'] < $midSrcH - 1
-                    ) {
-                        $cropped = imagecrop($middleImg, [
-                            'x' => $middleBounds['left'],
-                            'y' => $middleBounds['top'],
-                            'width' => max(1, $middleBounds['right'] - $middleBounds['left'] + 1),
-                            'height' => max(1, $middleBounds['bottom'] - $middleBounds['top'] + 1),
-                        ]);
-                        if ($cropped instanceof GdImage) {
-                            imagealphablending($cropped, false);
-                            imagesavealpha($cropped, true);
-                            $tileSource = $cropped;
-                            $tileIsCloned = true;
-                        }
-                    }
-
-                    // Skip title/end alpha-trim: tighter sub-image
-                    // fed into fitInBox('contain') pushes the visible
-                    // artwork beyond the slot — the user reported
-                    // flag=true as "no end at all", flag=false as
-                    // "end visible". Match the unflagged path's
-                    // "use source as-is" semantic so end is visible
-                    // in both branches. Only content.png is
-                    // alpha-trimmed (above) for clean tile seams.
-                    $leftSource = $leftImg;
-                    $rightSource = $rightImg;
-
-                    // Slot-bounded tile bounds under
-                    // dynamic_content_stretch: content tiles INSIDE
-                    // its own canvas-slot [split_1.x .. split_2.x] =
-                    // [$bboxLeftPx + $leftWidth .. $bboxLeftPx +
-                    // $leftWidth + $middleWidth], repeating across
-                    // that range at native w × h. This restores the
-                    // user's three-slot composition "title | content
-                    // × N | end" — content stays between cuts 2
-                    // and 3 instead of bleeding under title/end.
-                    // Title.png and end.png are CONTAIN-blitted ON
-                    // TOP of the canvas in the slot ranges outside
-                    // the tile bounds, so their CONTAIN-fit anchors
-                    // sit adjacent to (not overlapping) the
-                    // repeating content pattern.
-                    //
-                    // CACHE NOTE (mtime bust on source-file edits +
-                    // strategy-named marker).
-                    $tileSrcW = max(1, imagesx($tileSource));
-                    $tileSrcH = max(1, imagesy($tileSource));
-                    // Native-tile mode under dynamic_content_stretch:
-                    // render content.png at its NATURAL w × h rather
-                    // than vertically squashing it into $height. The
-                    // earlier STRETCH-to-canvas-H math turned a
-                    // 1350×256 source into a single 791×150 tile
-                    // (one full-canvas chevron pattern). At native
-                    // dimensions the same 1350×256 source tiles ~1.4
-                    // times across a 1920px slot, so the artist
-                    // sees ~2 chevron-pattern repetitions instead
-                    // of one giant squashed bar.
-                    //
-                    // Vertical placement: when $tileSrcH <= $height
-                    // the tile is centered inside the canvas (visible
-                    // artwork stays clear of the top/bottom transparent
-                    // gutters of a taller canvas). When $tileSrcH >
-                    // $height the tile overflows the canvas bottom;
-                    // max(0, …) clamps the y-offset to 0 so the tile
-                    // top-aligns and imagecopyresampled clips at
-                    // canvas-bottom — the designer's bottom-anchored
-                    // art is then truncated silently. Documented
-                    // limitation: source content.png should be
-                    // designed at canvas-H or shorter to avoid
-                    // bottom-clipping, which matches how the
-                    // unflagged path's y=0 top-align already treats
-                    // taller source parts.
-                    $scaledTileW = $tileSrcW;
-                    $scaledTileH = $tileSrcH;
-                    $tileY = (int) max(0, round(($height - $tileSrcH) / 2));
-
-                    $tileStartX = $bboxLeftPx + $leftWidth;
-                    $tileEndX = $bboxLeftPx + $leftWidth + $middleWidth;
-                    // Tile loop terminates when $tileX >= $tileEndX,
-                    // producing floor(($tileEndX - $tileStartX) /
-                    // $scaledTileW) full native tiles + one partial
-                    // blit if a fraction of the source width remains.
-                    // $middleWidth has a max(1, …) floor above so
-                    // even a degenerate split_2 == right_pct collapses
-                    // to a 1px slot blitting exactly one partial
-                    // tile and exiting cleanly. The min(\$scaledTileW,
-                    // \$tileEndX - \$tileX) guard inside the loop
-                    // handles $scaledTileW > remaining-space correctly.
-                    $tileX = $tileStartX;
-                    while ($tileX < $tileEndX) {
-                        $drawW = min($scaledTileW, $tileEndX - $tileX);
-                        $isPartial = $drawW < $scaledTileW;
-                        $srcClipW = $isPartial
-                            ? max(1, (int) round($drawW * ($tileSrcW / $scaledTileW)))
-                            : $tileSrcW;
-                        imagecopyresampled(
-                            $canvas, $tileSource, $tileX, $tileY, 0, 0,
-                            $drawW, $scaledTileH, $srcClipW, $tileSrcH,
-                        );
-                        $tileX += $drawW;
-                    }
-
-                    // CONTAIN + asymmetric anchor (matches the
-                    // unflagged path) for title.png and end.png —
-                    // the outer-scope $leftFit / $rightFit were
-                    // already run with aspect-preserving CONTAIN
-                    // math + slot-edge anchoring so the visible
-                    // stamp lands flush against the divider lines.
-                    // Reusing them here keeps the artwork
-                    // aspect-correct (no STRETCH-squash when the
-                    // source aspect differs from canvas aspect), and
-                    // keeps the visibleBounds-derived stamp metrics
-                    // bit-identical between this branch and the
-                    // unflagged branch — so $leftSource is blitted
-                    // unmodified (no per-branch alpha-trim) and
-                    // designer fades bleed out at the canvas edges
-                    // exactly as in the flag=false render.
-                    $this->blitResized($canvas, $leftSource, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
-                    $this->blitResized($canvas, $rightSource, $bboxRightPx - $rightWidth + $rightFit[2], 0, $rightFit[0], $rightFit[1]);
-
-                    if ($tileIsCloned) {
-                        imagedestroy($tileSource);
-                    }
-                } else {
-                    $this->blitResized($canvas, $leftImg, $bboxLeftPx + $leftFit[2], 0, $leftFit[0], $leftFit[1]);
-                    $this->blitResized($canvas, $middleImg, $bboxLeftPx + $leftWidth + $middleFit[2], 0, $middleFit[0], $middleFit[1]);
-                    $this->blitResized(
-                        $canvas,
-                        $rightImg,
-                        $bboxRightPx - $rightWidth + $rightFit[2],
-                        0,
-                        $rightFit[0],
-                        $rightFit[1],
-                    );
-                }
-
-                imagepng($canvas, $outputPng, 9);
-                imagedestroy($canvas);
-            }
-
-            if ($outputJson !== null) {
-                $meta = $metrics;
-                if ($originalJson !== null && is_file($originalJson)) {
-                    $existing = json_decode((string) file_get_contents($originalJson), true);
-                    if (is_array($existing)) {
-                        // Metrics win on conflict so the trim-based geometry
-                        // always reflects the latest slice output.
-                        $meta = array_merge($existing, $metrics);
-                    }
-                }
-
-                // Recompile-cache marker: written whenever the
-                // dynamic_content_stretch override fires under the
-                // current single-blit-content strategy so
-                // TickerStyleRepository::compileThemes() can detect
-                // a SEMANTIC change across deploys (boolean flag
-                // alone cannot see right-only → bilateral →
-                // single-blit content). The marker key is
-                // STRATEGY-NAMED — bump the suffix on every new
-                // contract so previously-compiled metas are
-                // guaranteed to recompile and never silently
-                // serve a stale PNG for the same source flag.
-                // Legacy compiled metas that carry dynamic=true
-                // but lack the current strategy's marker key are
-                // forced to recompile exactly once on the first
-                // deploy — no manual `rm public/ticker-styles/
-                // compiled/*` needed. On untoggle, the ELSE
-                // branch explicitly unsets the marker so a
-                // later re-toggle is observed by the cache
-                // check; without the unset,
-                // `array_merge($existing, $metrics)` would carry
-                // the marker forward across the untoggle, masking
-                // the re-toggle as a no-op and leaving stale
-                // right-only-OFF-shrunken PNGs in place after
-                // the artist flips the flag back on.
-                // Marker key bumped from the previous
-                // `_compiled_under_dynamic_stretch_content_only_alpha_trim`
-                // strategy to the new
-                // `_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay`
-                // strategy. TickerStyleRepository::compileThemes()
-                // busts the recompile cache on missing marker, so
-                // every theme cached under the OLD strategy (or
-                // under no marker at all) gets a single forced
-                // rebuild on first deploy of this code. The
-                // additional unset of the OLD marker on the
-                // else-branch ensures that an artist toggling the
-                // flag off then on observes the change rather than
-                // masking it as no-op.
-                if ($dynamicContentStretch) {
-                    // Bumped from the prior
-                    // `_compiled_under_dynamic_stretch_content_native_tile_contain_overlay`
-                    // strategy to the new
-                    // `_compiled_under_dynamic_stretch_content_slot_native_tile_contain_overlay`
-                    // strategy. The slot_ prefix distinguishes
-                    // "content tiles inside its own slot between
-                    // split_1 and split_2" (the user's desired
-                    // "1-2, 2-3, 2-3, 2-3, 3-4" composition) from
-                    // the prior "content tiles canvas-wide under
-                    // title+end overlays" strategy, whose compiled
-                    // PNGs would bleed content under title/end and
-                    // not respect the user's three-slot layout.
-                    // Marker rename is strategy-named so legacy
-                    // compiled metas under the prior strategy are
-                    // guaranteed to recompile on first deploy,
-                    // never silently serving a stale PNG for the
-                    // same source flag.
-                    $meta['_compiled_under_dynamic_stretch_content_slot_native_tile_contain_overlay'] = true;
-                } else {
-                    unset($meta['_compiled_under_dynamic_stretch_content_slot_native_tile_contain_overlay']);
-                    unset($meta['_compiled_under_dynamic_stretch_content_native_tile_contain_overlay']);
-                    unset($meta['_compiled_under_dynamic_stretch_content_canvas_wide_stretch_overlay']);
-                    unset($meta['_compiled_under_dynamic_stretch_content_only_alpha_trim']);
-                }
-
-                File::ensureDirectoryExists(dirname($outputJson));
-                File::put(
-                    $outputJson,
-                    (string) json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
-                );
-            }
-
-            return $metrics;
+        try {
+            return $this->sliceLoaded(
+                $leftImg, $middleImg, $rightImg,
+                $themeDir, $canvasWidth, $outputPng, $outputJson, $originalJson,
+                $splitPercentages, $leftPct, $rightPct,
+                $dynamicContentStretch,
+            );
         } finally {
             imagedestroy($leftImg);
             imagedestroy($middleImg);
@@ -782,31 +165,615 @@ class ThemeImageSlicer
     }
 
     /**
-     * Split a single source PNG/JPEG into three sub-PNGs at two X-coordinate
-     * percentages of the source's natural width. Used by
-     * {@see self::sliceFromSingle()} to turn the admin's single full-image
-     * design into the three title/content/end inputs that {@see self::slice()}
-     * already expects. The cut positions are converted from percentages to
-     * pixels here so the caller can stay in resolution-independent coordinates.
+     * Cut a single full-canvas source into three sub-PNGs and run the
+     * render pipeline. Public API preserved verbatim.
      *
-     * $split1 is the percentage where the title ends and content begins;
-     * $split2 is where the content ends and the right accent begins.
-     * $topPct, $bottomPct, $leftPct, $rightPct bound the 2D region of the
-     * source that gets passed downstream — anything outside the bounding
-     * box is cropped away here so the rest of the pipeline (CONTAIN-fit,
-     * asymmetric anchoring, recompile) only ever sees the ticker-relevant
-     * sub-rectangle. Splits and bbox are all absolute percentages of the
-     * source's natural width/height (mouse positions on the unmodified
-     * source artwork).
+     * @return array<string, mixed>|false
+     */
+    public function sliceFromSingle(
+        string $sourcePath,
+        float $split1,
+        float $split2,
+        ?string $themeDir = null,
+        ?int $canvasWidth = null,
+        bool $returnPreview = false,
+        float $topPct = 0.0,
+        float $bottomPct = 100.0,
+        float $leftPct = 0.0,
+        float $rightPct = 100.0,
+        bool $dynamicContentStretch = false,
+    ): array<string, mixed>|false {
+        $tempDir = $this->newTempDir();
+
+        try {
+            $split = $this->splitToTempPngs(
+                $sourcePath, $split1, $split2, $tempDir,
+                $topPct, $bottomPct, $leftPct, $rightPct,
+            );
+            if ($split === null) {
+                return false;
+            }
+
+            // Commit mode persists cut PNGs into $themeDir; preview
+            // mode skips and base64-encodes the rendered preview.
+            $commitThemeDir = $returnPreview ? null : $themeDir;
+            $outputPng = $returnPreview
+                ? $tempDir.'/preview.png'
+                : ($themeDir !== null ? $themeDir.'/compiled.png' : null);
+            // No merge JSON in this code path — the controller / CLI
+            // call here for a fresh slice rather than a recompile
+            // (TickerStyleRepository::compileThemes() is the recompile
+            // path and goes through slice() directly with $originalJson).
+            $outputJson = null;
+            $originalJson = null;
+
+            $metrics = $this->slice(
+                $split['left'],
+                $split['middle'],
+                $split['right'],
+                $commitThemeDir,
+                $canvasWidth,
+                $outputPng,
+                $outputJson,
+                $originalJson,
+                [$split1, $split2],
+                $leftPct,
+                $rightPct,
+                $dynamicContentStretch,
+            );
+
+            if (! is_array($metrics)) {
+                return false;
+            }
+
+            // Persist the three cut PNGs into $themeDir so
+            // TickerStyleRepository::compileThemes() can find them
+            // on the next request. compileThemes() reads
+            // public/ticker-styles/{slug}/{title,content,end}.png
+            // for the recompile path; without this persistence the
+            // freshly committed theme would be skipped because none
+            // of findImageFile($themeDir, ...) would resolve. The
+            // cut PNGs are PNG-compressed with alpha preserved by
+            // splitToTempPngs(), so File::copy preserves alpha
+            // bit-identically.
+            if ($commitThemeDir !== null) {
+                File::ensureDirectoryExists($commitThemeDir);
+                File::copy($split['left'], $commitThemeDir.'/title.png');
+                File::copy($split['middle'], $commitThemeDir.'/content.png');
+                File::copy($split['right'], $commitThemeDir.'/end.png');
+            }
+
+            if ($returnPreview) {
+                $previewPath = $tempDir.'/preview.png';
+                if (! is_file($previewPath)) {
+                    return false;
+                }
+                $metrics['preview_base64'] = base64_encode((string) file_get_contents($previewPath));
+            }
+
+            return $metrics;
+        } finally {
+            File::deleteDirectory($tempDir);
+        }
+    }
+
+    // ===================================================================
+    // PUBLIC RENDERERS — slot-position math + render in two clean methods.
+    // Each takes pre-loaded GdImages + slots + a caller-owned canvas.
+    // ===================================================================
+
+    /**
+     * Static render (default — `dynamic_content_stretch=false`).
      *
-     * The clamp at {@see self::MIN_SLOT_PIXELS} is a safety net — the
-     * controller already enforces ≥1% slots via Laravel validation, but
-     * rounding on very narrow sources could still produce zero-pixel
-     * regions.
+     * Slot-anchor convention (chosen so the user's three cuts map to
+     * the visible "title at left, content in middle, end at right"
+     * composition they see in the theme builder):
      *
-     * Returns null on any GD failure; otherwise a map of temp file paths
-     * plus the (post-crop) bbox dimensions of the active ticker sub-region
-     * for the caller's reference.
+     *   • Title block:  CONTAIN-fit, LEFT-anchored inside its slot.
+     *                   Title stamp lands flush against canvas-LEFT
+     *                   edge of the title slot (i.e. the user can drag
+     *                   split_1 anywhere, and the title always sits
+     *                   next to canvas-left of where they dragged it).
+     *   • Content block: STRETCH-fit to fill its slot exactly between
+     *                    line 2 and line 3. Each horizontal pixel of the
+     *                    content slot is exactly one pixel of
+     *                    content.png, no tiling.
+     *   • End block:    CONTAIN-fit, RIGHT-anchored inside its slot.
+     *                   End stamp lands flush against canvas-RIGHT edge
+     *                   of the end slot.
+     *
+     * MUTATES the caller's $canvas. Caller destroys.
+     */
+    /**
+     * @param  array{
+     *     title: array{x: int, width: int},
+     *     content: array{x: int, width: int},
+     *     end: array{x: int, width: int},
+     *     canvas_width: int
+     * }  $slots
+     */
+    public function sliceStatic(
+        GdImage $titleImg,
+        GdImage $contentImg,
+        GdImage $endImg,
+        array $slots,
+        GdImage $canvas,
+        int $height,
+    ): void {
+        $this->blitContain(
+            $canvas, $titleImg,
+            $slots['title'], $height, 'left',
+        );
+
+        $this->blitStretch(
+            $canvas, $contentImg,
+            $slots['content'], $height,
+        );
+
+        $this->blitContain(
+            $canvas, $endImg,
+            $slots['end'], $height, 'right',
+        );
+    }
+
+    /**
+     * Repeating render (`dynamic_content_stretch=true`).
+     *
+     * Same title/end CONTAIN-fit placement as static (so dragging the
+     * four cut lines produces identical title and end positioning in
+     * both modes — only content behaves differently).
+     *
+     * Content block: TILED at NATIVE w*h inside its own slot only.
+     * Tiles do NOT bleed past line 2 (split_1) or line 3 (split_2)
+     * because tileStartX = slot.x and tileEndX = slot.x + slot.width.
+     * When the content slot is wider than one native tile, multiple
+     * full tiles are blitted in sequence followed by one partial-blit
+     * tile that fills the residue (no pixel gap at the slot boundary).
+     *
+     * Vertical placement: each tile is centered inside the canvas when
+     * its native height fits (tileH <= height), or top-aligned with
+     * bottom-clipping when overflowing (matches unflagged y=0 top-
+     * align convention used by STRETCH-fit content above).
+     *
+     * MUTATES the caller's $canvas. Caller destroys.
+     */
+    /**
+     * @param  array{
+     *     title: array{x: int, width: int},
+     *     content: array{x: int, width: int},
+     *     end: array{x: int, width: int},
+     *     canvas_width: int
+     * }  $slots
+     */
+    public function sliceRepeating(
+        GdImage $titleImg,
+        GdImage $contentImg,
+        GdImage $endImg,
+        array $slots,
+        GdImage $canvas,
+        int $height,
+    ): void {
+        $tileW = max(1, imagesx($contentImg));
+        $tileH = max(1, imagesy($contentImg));
+        $tileY = (int) max(0, round(($height - $tileH) / 2));
+
+        $startX = $slots['content']['x'];
+        $endX = $startX + $slots['content']['width'];
+        $x = $startX;
+        while ($x < $endX) {
+            $drawW = min($tileW, $endX - $x);
+            imagecopyresampled(
+                $canvas,
+                $contentImg,
+                $x,
+                $tileY,
+                0,
+                0,
+                $drawW,
+                $tileH,
+                $drawW,
+                $tileH,
+            );
+            $x += $drawW;
+        }
+
+        // Title and end sit ON TOP of the content base layer
+        // (CONTAIN-fit, left/right anchored). Their slots are
+        // adjacent to the content tile band (no overlap).
+        $this->blitContain(
+            $canvas, $titleImg,
+            $slots['title'], $height, 'left',
+        );
+        $this->blitContain(
+            $canvas, $endImg,
+            $slots['end'], $height, 'right',
+        );
+    }
+
+    // ===================================================================
+    // PRIVATE ORCHESTRATOR + HELPERS
+    // ===================================================================
+
+    /**
+     * Internal orchestrator that takes pre-loaded GdImages and runs
+     * the slot math + render + (optional) JSON-write pipeline. Both
+     * public entry points funnel here.
+     */
+    /**
+     * @param  array{0: float, 1: float}|null  $splitPercentages
+     * @return array{
+     *     title_stamp_left_pct: float,
+     *     title_stamp_width_pct: float,
+     *     end_stamp_left_pct: float,
+     *     end_stamp_width_pct: float
+     * }
+     */
+    private function sliceLoaded(
+        GdImage $leftImg,
+        GdImage $middleImg,
+        GdImage $rightImg,
+        ?string $themeDir,
+        ?int $canvasWidth,
+        ?string $outputPng,
+        ?string $outputJson,
+        ?string $originalJson,
+        ?array $splitPercentages,
+        ?float $leftPct,
+        ?float $rightPct,
+        bool $dynamicContentStretch,
+    ): array {
+        $effectiveWidth = max(1, $canvasWidth ?? self::DEFAULT_CANVAS_WIDTH);
+
+        // Slot positions in canvas pixels. Testable in isolation via
+        // ThemeGeometryMath::calculateSlots(). When splitPercentages
+        // is null (legacy 3-file POST flow) the slot widths come
+        // from imagesx() of each pre-cut PNG, scaled to fill the
+        // canvas — preserved for backward compatibility with the
+        // legacy upload flow in TickerDashboardController.
+        if ($splitPercentages !== null) {
+            $slots = ThemeGeometryMath::calculateSlots(
+                $effectiveWidth,
+                (float) ($leftPct ?? 0.0),
+                (float) $splitPercentages[0],
+                (float) $splitPercentages[1],
+                (float) ($rightPct ?? 100.0),
+            );
+        } else {
+            $leftSrcW = max(1, imagesx($leftImg));
+            $middleSrcW = max(1, imagesx($middleImg));
+            $rightSrcW = max(1, imagesx($rightImg));
+            $totalSrcW = max(1, $leftSrcW + $middleSrcW + $rightSrcW);
+            $scale = $effectiveWidth / $totalSrcW;
+
+            $titleWidth = max(1, (int) round($leftSrcW * $scale));
+            $endWidth = max(1, (int) round($rightSrcW * $scale));
+            $contentWidth = max(1, $effectiveWidth - $titleWidth - $endWidth);
+
+            $slots = [
+                'title' => ['x' => 0, 'width' => $titleWidth],
+                'content' => ['x' => $titleWidth, 'width' => $contentWidth],
+                'end' => ['x' => $titleWidth + $contentWidth, 'width' => $endWidth],
+                'canvas_width' => $effectiveWidth,
+            ];
+        }
+
+        $height = self::resolveCanvasHeight($leftImg, $middleImg, $rightImg);
+
+        // Stamp metrics are computeable BEFORE rendering, from the
+        // alpha-aware visibleBounds of title/end + slot positions.
+        // Stored alongside the rendered PNG so TickerStyleRepository
+        // can hand them back to the JS consumer unchanged across
+        // recompile passes.
+        $metrics = $this->computeStampMetrics(
+            $leftImg, $rightImg, $slots, $height,
+        );
+
+        if ($outputPng !== null) {
+            File::ensureDirectoryExists(dirname($outputPng));
+
+            $canvas = $this->createTransparentCanvas($slots['canvas_width'], $height);
+
+            if ($dynamicContentStretch) {
+                $this->sliceRepeating(
+                    $leftImg, $middleImg, $rightImg,
+                    $slots, $canvas, $height,
+                );
+            } else {
+                $this->sliceStatic(
+                    $leftImg, $middleImg, $rightImg,
+                    $slots, $canvas, $height,
+                );
+            }
+
+            imagepng($canvas, $outputPng, 9);
+            imagedestroy($canvas);
+        }
+
+        if ($outputJson !== null) {
+            $this->writeCompiledJson(
+                $outputJson, $originalJson, $metrics, [
+                    'left_pct' => (float) ($leftPct ?? 0.0),
+                    'right_pct' => (float) ($rightPct ?? 100.0),
+                    'split_1' => (float) ($splitPercentages[0] ?? 0.0),
+                    'split_2' => (float) ($splitPercentages[1] ?? 100.0),
+                    'dynamic_content_stretch' => $dynamicContentStretch,
+                ],
+            );
+        }
+
+        return $metrics;
+    }
+
+    /**
+     * Slot-rendered alpha-aware stamp metrics (consumed by show.tsx
+     * to position the live label-box overlay over the visible stamp).
+     *
+     * For each of title/end:
+     *   1. Compute the CONTAIN-fit scale used by blitContain() —
+     *      min(slotW/srcW, height/srcH). Using the same scale here
+     *      guarantees the metric position matches the rendered pixel.
+     *   2. Map alpha-trimmed visibleBounds() into canvas coords
+     *      using that scale + the slot's anchor offset (0 for title,
+     *      slotW - drawW for end).
+     *
+     * Output: four `*_stamp_*_pct` values consumed by
+     * `manualLabelBox` in resources/js/pages/ticker/show.tsx.
+     */
+    /**
+     * @param  array{
+     *     title: array{x: int, width: int},
+     *     content: array{x: int, width: int},
+     *     end: array{x: int, width: int},
+     *     canvas_width: int
+     * }  $slots
+     * @return array{
+     *     title_stamp_left_pct: float,
+     *     title_stamp_width_pct: float,
+     *     end_stamp_left_pct: float,
+     *     end_stamp_width_pct: float
+     * }
+     */
+    private function computeStampMetrics(
+        GdImage $titleImg,
+        GdImage $endImg,
+        array $slots,
+        int $height,
+    ): array<string, mixed> {
+        $titleBounds = $this->visibleBounds($titleImg);
+        $endBounds = $this->visibleBounds($endImg);
+
+        // Title: LEFT-anchored CONTAIN. Blit offset inside slot = 0.
+        $titleScale = self::containScale(
+            $slots['title']['width'], max(1, imagesx($titleImg)),
+            $height, imagesy($titleImg),
+        );
+        $titleVisSrcW = max(1, $titleBounds['right'] - $titleBounds['left'] + 1);
+        $titleCanvasX = $slots['title']['x']
+            + 0
+            + ($titleBounds['left'] * $titleScale);
+        $titleCanvasW = $titleVisSrcW * $titleScale;
+
+        // End: RIGHT-anchored CONTAIN. Blit offset inside slot =
+        // (slotW - drawW) so the end image's right edge touches the
+        // slot's right edge.
+        $endScale = self::containScale(
+            $slots['end']['width'], max(1, imagesx($endImg)),
+            $height, imagesy($endImg),
+        );
+        $endDrawW = max(1, (int) round(max(1, imagesx($endImg)) * $endScale));
+        $endBlitOffsetInSlot = max(0, $slots['end']['width'] - $endDrawW);
+        $endVisSrcW = max(1, $endBounds['right'] - $endBounds['left'] + 1);
+        $endCanvasX = $slots['end']['x']
+            + $endBlitOffsetInSlot
+            + ($endBounds['left'] * $endScale);
+        $endCanvasW = $endVisSrcW * $endScale;
+
+        return [
+            'title_stamp_left_pct' => ThemeGeometryMath::percentValue(
+                (float) $titleCanvasX, $slots['canvas_width'],
+            ),
+            'title_stamp_width_pct' => ThemeGeometryMath::percentValue(
+                (float) $titleCanvasW, $slots['canvas_width'],
+            ),
+            'end_stamp_left_pct' => ThemeGeometryMath::percentValue(
+                (float) $endCanvasX, $slots['canvas_width'],
+            ),
+            'end_stamp_width_pct' => ThemeGeometryMath::percentValue(
+                (float) $endCanvasW, $slots['canvas_width'],
+            ),
+        ];
+    }
+
+    /**
+     * CONTAIN-fit scale formula: the smallest of (slotW/srcW) and
+     // (height/srcH) so the source fits inside BOTH constraints. Used
+     * by both {@see self::blitContain()} (for pixel placement) and
+     * {@see self::computeStampMetrics()} (for visibleBounds mapping)
+     * so they stay in lockstep — a change to one MUST change the other
+     * or the live label-box sits in the wrong place.
+     */
+    private static function containScale(
+        int $slotW,
+        int $srcW,
+        int $slotH,
+        int $srcH,
+    ): float {
+        $slotW = max(1, $slotW);
+        $slotH = max(1, $slotH);
+        $srcW = max(1, $srcW);
+        $srcH = max(1, $srcH);
+
+        return min(($slotW / $srcW), ($slotH / $srcH));
+    }
+
+    /**
+     * CONTAIN-fit blit into a slot with optional left/right anchor.
+     */
+    /**
+     * @param  array{x: int, width: int}  $slot
+     */
+    private function blitContain(
+        GdImage $canvas,
+        GdImage $src,
+        array $slot,
+        int $height,
+        string $anchor,
+    ): void {
+        $srcW = max(1, imagesx($src));
+        $srcH = max(1, imagesy($src));
+        $slotW = max(1, (int) $slot['width']);
+
+        $scale = self::containScale($slotW, $srcW, $height, $srcH);
+
+        $drawW = max(1, (int) round($srcW * $scale));
+        $drawH = max(1, (int) round($srcH * $scale));
+
+        $offsetX = ($anchor === 'right')
+            ? max(0, $slotW - $drawW)
+            : 0;
+        $offsetY = max(0, (int) round(($height - $drawH) / 2));
+
+        imagecopyresampled(
+            $canvas, $src,
+            (int) $slot['x'] + $offsetX,
+            $offsetY,
+            0,
+            0,
+            $drawW,
+            $drawH,
+            $srcW,
+            $srcH,
+        );
+    }
+
+    /**
+     * STRETCH-fit blit (slotW × slotH, ignore source aspect). Used by
+     * static content render so content.png fills its slot exactly
+     * (no tiling, no seams, 1:1 pixel mapping scaled to slot dim).
+     */
+    /**
+     * @param  array{x: int, width: int}  $slot
+     */
+    private function blitStretch(
+        GdImage $canvas,
+        GdImage $src,
+        array $slot,
+        int $height,
+    ): void {
+        $srcW = max(1, imagesx($src));
+        $srcH = max(1, imagesy($src));
+        imagecopyresampled(
+            $canvas, $src,
+            (int) $slot['x'],
+            0,
+            0,
+            0,
+            max(1, (int) $slot['width']),
+            max(1, $height),
+            $srcW,
+            $srcH,
+        );
+    }
+
+    /**
+     * Construct a fully-transparent canvas of given dimensions.
+     */
+    private function createTransparentCanvas(int $width, int $height): GdImage
+    {
+        $width = max(1, $width);
+        $height = max(1, $height);
+
+        $canvas = imagecreatetruecolor($width, $height);
+        imagealphablending($canvas, false);
+        imagesavealpha($canvas, true);
+        $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+        if ($transparent === false) {
+            imagedestroy($canvas);
+            throw new RuntimeException('Failed to allocate transparent color');
+        }
+        imagefilledrectangle($canvas, 0, 0, $width, $height, $transparent);
+
+        return $canvas;
+    }
+
+    /**
+     * Computed canvas height: max of the 3 source heights, capped at
+     * MAX_STYLE_HEIGHT = 150, floored at 32 (so very thin sources
+     * still render a usable strip rather than a 1px-tall sliver).
+     */
+    private static function resolveCanvasHeight(
+        GdImage $titleImg,
+        GdImage $contentImg,
+        GdImage $endImg,
+    ): int {
+        return max(32, min(
+            self::MAX_STYLE_HEIGHT,
+            (int) round(max(
+                imagesy($titleImg),
+                imagesy($contentImg),
+                imagesy($endImg),
+            )),
+        ));
+    }
+
+    /**
+     * Persist compiled JSON: merge with `$originalJson` if present
+     * (preserves the user's name/author/label_pct et al.), drop any
+     * historical `_compiled_under_dynamic_stretch_*` marker keys
+     * (the prior generation's recompile-cache strategy — now retired
+     * by {@see ThemeCacheBuster::generateHash()}), and write the new
+     * `geometry_hash` field for cache-bust detection on next read.
+     */
+    /**
+     * @param  array{
+     *     title_stamp_left_pct: float,
+     *     title_stamp_width_pct: float,
+     *     end_stamp_left_pct: float,
+     *     end_stamp_width_pct: float
+     * }  $metrics
+     * @param  array<string, mixed>  $effectiveSettings
+     */
+    private function writeCompiledJson(
+        string $outputJson,
+        ?string $originalJson,
+        array $metrics,
+        array $effectiveSettings,
+    ): void {
+        $meta = $metrics;
+
+        if ($originalJson !== null && is_file($originalJson)) {
+            $existing = json_decode((string) file_get_contents($originalJson), true);
+            if (is_array($existing)) {
+                // Drop historical `_compiled_under_dynamic_stretch_*`
+                // markers — they have no meaning under the new hash-
+                // based cache and would otherwise drag the legacy key
+                // forward across every recompile.
+                foreach (array_keys($existing) as $key) {
+                    if (is_string($key) && str_starts_with($key, '_compiled_under_dynamic_stretch_')) {
+                        unset($existing[$key]);
+                    }
+                }
+                $meta = array_merge($existing, $metrics);
+            }
+        }
+
+        $meta['geometry_hash'] = ThemeCacheBuster::generateHash($effectiveSettings);
+
+        File::ensureDirectoryExists(dirname($outputJson));
+        File::put(
+            $outputJson,
+            (string) json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
+        );
+    }
+
+    // ===================================================================
+    // CUT STAGE + GD/IO HELPERS
+    // ===================================================================
+
+    /**
+     * Cut a single source-PNG into three sub-PNGs at the user's chosen
+     * X-coordinate percentages, applying 2D bbox crop and
+     * MIN_SLOT_PIXELS clamping. Returns null on any GD failure.
      *
      * @return array{left: string, middle: string, right: string, width: int, height: int}|null
      */
@@ -829,55 +796,29 @@ class ThemeImageSlicer
             $sourceWidth = imagesx($source);
             $sourceHeight = imagesy($source);
 
-            // Both cuts and bbox are absolute percentages of the source.
-            // Default bbox (0/100) reproduces the pre-2D-crop behavior
-            // exactly so the existing test fixtures continue to pass.
             $leftX = (int) round(($leftPct / 100) * $sourceWidth);
             $rightX = (int) round(($rightPct / 100) * $sourceWidth);
             $topY = (int) round(($topPct / 100) * $sourceHeight);
             $bottomY = (int) round(($bottomPct / 100) * $sourceHeight);
 
-            if ($topY < 0) {
-                $topY = 0;
-            }
-            if ($bottomY > $sourceHeight) {
-                $bottomY = $sourceHeight;
-            }
-            if ($bottomY <= $topY + 1) {
-                $bottomY = min($sourceHeight, $topY + 1);
-            }
-            if ($leftX < 0) {
-                $leftX = 0;
-            }
-            if ($rightX > $sourceWidth) {
-                $rightX = $sourceWidth;
-            }
-            if ($rightX <= $leftX + 1) {
-                $rightX = min($sourceWidth, $leftX + 1);
-            }
+            // Defensive clamps: every coordinate must be valid for
+            // GD's imagecrop(), which silently fails on out-of-range
+            // or zero/negative-width regions.
+            $topY = max(0, $topY);
+            $bottomY = min($sourceHeight, max($topY + 1, $bottomY));
+            $leftX = max(0, $leftX);
+            $rightX = min($sourceWidth, max($leftX + 1, $rightX));
 
             $bboxWidth = $rightX - $leftX;
             $bboxHeight = $bottomY - $topY;
 
-            // Splits are interpreted absolutely on source width — so the
-            // title cut starts at $leftX (bbox-left) and the end cut ends at
-            // $rightX (bbox-right). Splits outside the bbox are clamped to
-            // its edges so GD never sees a zero-width slot.
             $cutX1 = (int) round(($split1 / 100) * $sourceWidth);
             $cutX2 = (int) round(($split2 / 100) * $sourceWidth);
 
-            if ($cutX1 < $leftX + self::MIN_SLOT_PIXELS) {
-                $cutX1 = $leftX + self::MIN_SLOT_PIXELS;
-            }
-            if ($cutX1 > $rightX - self::MIN_SLOT_PIXELS) {
-                $cutX1 = $rightX - self::MIN_SLOT_PIXELS;
-            }
-            if ($cutX2 < $cutX1 + self::MIN_SLOT_PIXELS) {
-                $cutX2 = $cutX1 + self::MIN_SLOT_PIXELS;
-            }
-            if ($cutX2 > $rightX - self::MIN_SLOT_PIXELS) {
-                $cutX2 = $rightX - self::MIN_SLOT_PIXELS;
-            }
+            // Splits live inside the bbox; clamp to MIN_SLOT_PIXELS
+            // floor so GD never receives a degenerate slot.
+            $cutX1 = max($leftX + self::MIN_SLOT_PIXELS, min($rightX - self::MIN_SLOT_PIXELS, $cutX1));
+            $cutX2 = max($cutX1 + self::MIN_SLOT_PIXELS, min($rightX - self::MIN_SLOT_PIXELS, $cutX2));
 
             $title = imagecrop($source, ['x' => $leftX, 'y' => $topY, 'width' => $cutX1 - $leftX, 'height' => $bboxHeight]);
             $middle = imagecrop($source, ['x' => $cutX1, 'y' => $topY, 'width' => $cutX2 - $cutX1, 'height' => $bboxHeight]);
@@ -897,10 +838,6 @@ class ThemeImageSlicer
                 return null;
             }
 
-            // imagecrop() returns a fresh GdImage that does not inherit
-            // the source's alpha state; pin the flags here so the split
-            // halves make it through the rest of the pipeline with their
-            // transparency intact (see loadImage's docblock for context).
             imagealphablending($title, false);
             imagesavealpha($title, true);
             imagealphablending($middle, false);
@@ -908,8 +845,6 @@ class ThemeImageSlicer
             imagealphablending($right, false);
             imagesavealpha($right, true);
 
-            // PNG compression level 9 keeps temp file size small;
-            // alpha values are unaffected by the compression level.
             imagepng($title, $tempDir.'/title.png', 9);
             imagepng($middle, $tempDir.'/content.png', 9);
             imagepng($right, $tempDir.'/end.png', 9);
@@ -918,8 +853,6 @@ class ThemeImageSlicer
             imagedestroy($middle);
             imagedestroy($right);
 
-            // Return the bbox dimensions (after 2D crop), not the raw source
-            // dimensions, so downstream consumers know what the strips cover.
             return [
                 'left' => $tempDir.'/title.png',
                 'middle' => $tempDir.'/content.png',
@@ -933,161 +866,23 @@ class ThemeImageSlicer
     }
 
     /**
-     * Build the temporary directory {@see self::sliceFromSingle()} owns for
-     * the lifetime of one slice call. The random suffix keeps concurrent
-     * requests from racing when the same host handles them in parallel.
+     * Build a temp directory unique to this slice call. The random
+     * suffix keeps concurrent requests from racing on the same host.
      */
     private function newTempDir(): string
     {
         $path = sys_get_temp_dir().'/ticker-slice-'.Str::random(16);
-
         File::ensureDirectoryExists($path);
 
         return $path;
     }
 
     /**
-     * Slice a single full-canvas image into a theme by first cutting it
-     * into three title/content/end sub-images at two user-chosen X
-     * percentages, then running the same pipeline as
-     * {@see self::slice()}. The split is performed in a STemporary
-     * directory owned by this call so callers don't have to manage the
-     * file lifecycle themselves — every file written under it (split
-     * halves and, when $returnPreview is true, the compiled preview PNG)
-     * is removed once the call returns, even on GD failure.
-     *
-     * Two modes:
-     *
-     *  - **Commit mode** ($returnPreview=false): pass $themeDir and a
-     *    canvas width. The three split halves flow through {@see self::slice()}
-     *    which writes the trimmed title/content/end.png files into
-     *    $themeDir (e.g. public/ticker-styles/{slug}/). The compiled
-     *    {@slug}.png is generated lazily by
-     *    {@see TickerStyleRepository::compileThemes()} on the next read,
-     *    so we don't write it here.
-     *
-     *  - **Preview mode** ($returnPreview=true): skip $themeDir, write
-     *    the compiled PNG to a temp file, and base64-encode it in the
-     *    returned array so the caller can ship it as JSON without
-     *    worrying about an artifact to clean up.
-     *
-     * $split1 is the percentage where the title ends and content begins,
-     * $split2 is where the content ends and the right accent begins.
-     * The controller validates that 0 < $split1 < $split2 < 100; if
-     * somehow invalid inputs slip past validation, this method clamps
-     * via {@see self::MIN_SLOT_PIXELS} and returns false rather than
-     * crashing GD.
-     *
-     * @return array{
-     *     title_stamp_left_pct: float,
-     *     title_stamp_width_pct: float,
-     *     end_stamp_left_pct: float,
-     *     end_stamp_width_pct: float,
-     *     preview_base64?: string
-     * }|false
+     * Alpha-preserving file load. imagecreatefromstring() does not
+     * enable alpha preservation by default — without the two flags
+     * below, designed transparent viewports and the alpha-trimmed
+     * pad would never reach the compiled PNG.
      */
-    public function sliceFromSingle(
-        string $sourcePath,
-        float $split1,
-        float $split2,
-        ?string $themeDir = null,
-        ?int $canvasWidth = null,
-        bool $returnPreview = false,
-        float $topPct = 0.0,
-        float $bottomPct = 100.0,
-        float $leftPct = 0.0,
-        float $rightPct = 100.0,
-        // Tail-fill flag (see {self::slice()} for the runtime
-        // override semantics). Forwarded to the inner slice() call so
-        // the source-path commit/preview and the recompile path agree
-        // on the same override behavior — without a shared flag the
-        // first-pass commit could write a bbox-cropped strip while a
-        // recompile would silently produce a canvas-wide one,
-        // producing a strip-width jump on every theme re-edit.
-        bool $dynamicContentStretch = false,
-    ): array|false {
-        $tempDir = $this->newTempDir();
-
-        try {
-            // Cut stage always uses the user's recorded split_1/split_2
-            // — even when the artist's dynamic_content_stretch toggle
-            // is on. The bilateral override lives entirely in slice()'s
-            // slot math + the single-blit content blit further down
-            // (see comment there). Routing the whole source into
-            // content.png here was tried and reverted: it pulled
-            // artwork the artist designed outside their recorded
-            // cuts (e.g. an end accent placed mid-canvas or text at
-            // x ≈ 60% of source width) into the visible strip where
-            // it appeared as dramatically-stretched regions inside
-            // the runtime-stretched content slot. With the cut
-            // stage now bypassing the flag, content.png faithfully
-            // captures ONLY the region between split_1 and split_2;
-            // slice() stretches that narrow slice across the full
-            // canvas and drops title/end from the rendered output
-            // entirely.
-            $split = $this->splitToTempPngs(
-                $sourcePath,
-                $split1,
-                $split2,
-                $tempDir,
-                $topPct,
-                $bottomPct,
-                $leftPct,
-                $rightPct,
-            );
-            if ($split === null) {
-                return false;
-            }
-
-            $metrics = $this->slice(
-                $split['left'],
-                $split['middle'],
-                $split['right'],
-                $returnPreview ? null : $themeDir,
-                $canvasWidth,
-                $returnPreview ? $tempDir.'/preview.png' : null,
-                null,
-                null,
-                // Forward the user's chosen splits + bbox so slice()
-                // runs the bbox-aware recompile math on the very
-                // first commit/preview. Without these, slice() falls
-                // back to the legacy "proportional allocation" branch
-                // which scales the bbox to fill 100% of the canvas —
-                // a path that disagrees with the recompile path's
-                // absolute-percentage math, so the live ticker (which
-                // reads the persisted split_1/split_2 + bbox via
-                // meta.json and positions the scrolling viewport with
-                // `left: split_1%`) ends up scrolling text into the
-                // slot the preview never intended. Forwarding the
-                // percentages here aligns preview / first-pass commit
-                // / recompile on a single coordinate system so the
-                // theme-builder "Source parts" overlay, the preview
-                // base64 PNG, the on-disk compiled PNG and the live
-                // ticker all agree on the same split positions.
-                [$split1, $split2],
-                $leftPct,
-                $rightPct,
-                $dynamicContentStretch,
-            );
-
-            if (! is_array($metrics)) {
-                return false;
-            }
-
-            if ($returnPreview) {
-                $previewPath = $tempDir.'/preview.png';
-                if (! is_file($previewPath)) {
-                    return false;
-                }
-                $metrics['preview_base64'] = base64_encode((string) file_get_contents($previewPath));
-            }
-
-            return $metrics;
-        } finally {
-            File::deleteDirectory($tempDir);
-        }
-    }
-
     private function loadImage(string $path): GdImage|false
     {
         $contents = @file_get_contents($path);
@@ -1100,13 +895,6 @@ class ThemeImageSlicer
             return false;
         }
 
-        // imagecreatefromstring() does not enable alpha preservation by
-        // default — the returned GdImage behaves as RGB and silently
-        // drops any transparent / semi-transparent pixels when passed
-        // to imagepng() or imagecopyresampled(). Without these two
-        // flags, the source's designed transparent viewports and the
-        // trim step's transparent padding would never reach the
-        // compiled PNG.
         imagealphablending($image, false);
         imagesavealpha($image, true);
 
@@ -1114,83 +902,8 @@ class ThemeImageSlicer
     }
 
     /**
-     * Stamp the source image into a (slotWidth × slotHeight) box.
-     * Two fit modes are supported:
-     *
-     *  - **stretch** (default): the source is rendered at the
-     *    slot's exact pixel dimensions, ignoring the source's
-     *    natural aspect ratio. Used for the middle "content"
-     *    segment so it can grow/shrink with the user's dividers
-     *    without leaving transparent gaps inside the slot.
-     *
-     *  - **contain**: the source is uniformly scaled with
-     *    {@see min()} so the whole image fits inside the slot, then
-     *    horizontally centered via $partX. Used for the left
-     *    "title" and right "end" accents so logos / branding
-     *    maintain their natural aspect instead of getting squashed
-     *    when the slot ratio differs from the source ratio.
-     *
-     * Vertical offset is intentionally not returned: every part is
-     * stamped from y=0 so the design forms a single horizontal bar
-     * across all three slots. The "contain" parts end up shorter
-     * than the slot height when their aspect ratio is wider than
-     * the slot — that wasted vertical space is left transparent so
-     * the CONTENT strip (which always stretches) can pick up the
-     * slack without colliding with the centered logos.
-     *
-     * $srcW and $srcH remain in the signature for stability with
-     * existing callers; under 'stretch' they are ignored, under
-     * 'contain' they drive the scale.
-     *
-     * @param  string  $fitMode  'stretch' or 'contain'
-     * @return array{0: int, 1: int, 2: int}
-     */
-    private function fitInBox(int $slotWidth, int $slotHeight, int $srcW, int $srcH, string $fitMode = 'stretch'): array
-    {
-        $slotWidth = max(1, $slotWidth);
-        $slotHeight = max(1, $slotHeight);
-        $srcW = max(1, $srcW);
-        $srcH = max(1, $srcH);
-
-        if ($fitMode === 'contain') {
-            $scale = min($slotWidth / $srcW, $slotHeight / $srcH);
-            $newW = max(1, (int) round($srcW * $scale));
-            $newH = max(1, (int) round($srcH * $scale));
-            $partX = (int) round(($slotWidth - $newW) / 2);
-
-            return [$newW, $newH, $partX];
-        }
-
-        $newW = $slotWidth;
-        $newH = $slotHeight;
-        $partX = 0;
-
-        return [$newW, $newH, $partX];
-    }
-
-    /**
      * Find the alpha-trim (visible-opaque) bounding box of an image.
-     * Two-pass scan of every pixel's alpha channel: a pixel counts as
-     * "visible" when its alpha is below the fully-transparent threshold
-     * (`SDL_ALPHA_OPAQUE` is 0 in GD's reversed encoding, where 0 means
-     * fully opaque and 127 means fully transparent). The returned rect
-     * runs inside the image's natural coordinate system, [0..imagesx−1]
-     * × [0..imagesy−1], and is empty-but-fallback when the source is
-     * fully transparent: the function never returns `right < 0` or
-     * `bottom < 0` because that would degrade the math
-     * {@see self::slice()} runs against these bounds.
-     *
-     * Pixel-by-pixel alpha scan stays cheap for typical theme asset
-     * sizes — a dusk title.png is 286×121 (~35k pixels) and the compiled
-     * PNG is at most 1920×150 (~288k pixels) — well within a single
-     * request budget. Sources larger than that should probably not be
-     * sent through the ticker slicer anyway.
-     *
-     * Pixels whose alpha equals 127 (fully transparent per GD's
-     * encoding) are filtered out so the live ticker label sits over
-     * the artwork the user actually sees. Half-transparent pixels
-     * (alpha < 127) are kept so intentional soft edges, gradients, and
-     * anti-aliasing still bound the visible region.
+     * Two-pass scan of every pixel's alpha channel.
      *
      * @return array{left: int, right: int, top: int, bottom: int}
      */
@@ -1207,9 +920,6 @@ class ThemeImageSlicer
         for ($y = 0; $y < $height; $y++) {
             for ($x = 0; $x < $width; $x++) {
                 $packed = (int) imagecolorat($img, $x, $y);
-                // GD's packed color is the same encoding as
-                // imagecolorallocatealpha(): bits 24..31 hold alpha in
-                // the range 0 (opaque) .. 127 (fully transparent).
                 $alpha = ($packed >> 24) & 0x7F;
                 if ($alpha >= 127) {
                     continue;
@@ -1231,61 +941,9 @@ class ThemeImageSlicer
         }
 
         if ($right < 0) {
-            // Fully transparent source — nothing to anchor to. Fall
-            // back to the full bounding box so the slot math doesn't
-            // collapse to a 1×1 degenerate stamp.
             return ['left' => 0, 'right' => $width - 1, 'top' => 0, 'bottom' => $height - 1];
         }
 
         return ['left' => $left, 'right' => $right, 'top' => $top, 'bottom' => $bottom];
-    }
-
-    /**
-     * Convert a canvas-relative pixel offset (or width) into a
-     * percentage of the canvas width, returned as a floating-point
-     * number with four decimals of precision. Using a plain float
-     * rather than a '%'-suffixed string keeps the metric directly
-     * portable to JS (`${value}%`), JSON (numeric), and any future
-     * downstream tooling that doesn't speak CSS percentage strings.
-     */
-    private function percentValue(float $pixels, float $canvasWidth): float
-    {
-        if ($canvasWidth <= 0) {
-            return 0.0;
-        }
-
-        // Clamp the pixel position to the canvas range so an out-of-range
-        // value renders as 0% or 100% rather than relying on the JS
-        // consumer to defensively clamp later. A source shorter than
-        // its target slot could otherwise produce a negative offset
-        // (no: pixel values are integers).
-        $clamped = max(0.0, min($canvasWidth, (float) $pixels));
-
-        return round(($clamped / $canvasWidth) * 100, 4);
-    }
-
-    private function blitResized(
-        GdImage $canvas,
-        GdImage $source,
-        int $dstX,
-        int $dstY,
-        int $dstWidth,
-        int $dstHeight,
-    ): void {
-        $sourceWidth = max(1, imagesx($source));
-        $sourceHeight = max(1, imagesy($source));
-
-        imagecopyresampled(
-            $canvas,
-            $source,
-            $dstX,
-            $dstY,
-            0,
-            0,
-            $dstWidth,
-            $dstHeight,
-            $sourceWidth,
-            $sourceHeight,
-        );
     }
 }
